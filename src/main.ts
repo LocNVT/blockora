@@ -72,6 +72,7 @@ import {
   SAVE_CONFIG,
   SURVIVAL_CONFIG,
   WORLD_CONFIG,
+  CHUNK_STREAMING_CONFIG,
   WORLD_GEN_CONFIG,
 } from './config/constants';
 import { Inventory } from './items/Inventory';
@@ -211,7 +212,11 @@ async function bootstrap(): Promise<void> {
     lightEngine,
     blockEdits,
     perfStats,
-    { service: createChunkGenerationService(worldGenerator) },
+    {
+      service: createChunkGenerationService(worldGenerator),
+      frameBudgetMs: CHUNK_STREAMING_CONFIG.frameBudgetMs,
+      outerRing: CHUNK_STREAMING_CONFIG.outerRing,
+    },
   );
   // Warm-up: synchronously generate the start chunk + its ring on the main
   // thread so there's solid ground (and a resolvable spawn height) before the

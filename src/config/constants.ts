@@ -505,6 +505,10 @@ export const CHUNK_STREAMING_CONFIG = {
   maxInFlight: 8,
   /** Chebyshev radius (chunks) generated synchronously around the start / respawn point before play. */
   warmUpRadius: 1,
+  /** Main-thread budget (ms) per ChunkManager.update for accepting results + meshing (always >= 1 accept and 1 mesh). */
+  frameBudgetMs: 6,
+  /** Chunk rings generated + lit beyond renderDistance but never meshed (avoids remeshing the edge row while walking). */
+  outerRing: 1,
 } as const;
 
 export const DEBUG_CONFIG = {

@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 8: time-based streaming budget (optimisation 2).
+Phase 8: startup first-frame stall investigation.
 
 ---
 
@@ -169,7 +169,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
-* Streaming: walking still remeshes the old edge row once per center move (~2× — an extra never-meshed ring would fix it); accepting 4 chunks / frame still costs ~35 ms p95 on the test machine (a time-based budget would smooth it); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
+* Streaming: ~200 ms first-frame stall at startup (warm-up + shader compile + initial load; not investigated); new rows appear one chunk later (meshed once ring neighbours load); block-edit remeshes bypass ChunkManager's mesh bookkeeping (harmless in practice — edits are within 6 blocks); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
 * Profiling: mesh upload (`sink.upsert`) isn't timed separately (only visible in frame time); frame time includes vsync wait; headless numbers are software-GPU.
 * Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
 * Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
@@ -252,6 +252,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 optimisation 2: time budget + never-meshed outer ring
+
+* `ChunkManager` options `frameBudgetMs` (6 ms, via the probe clock) and `outerRing` (1), passed from `CHUNK_STREAMING_CONFIG` in main.ts (class defaults off). Accepts one result at a time and meshes nearest-first until the deadline, always ≥ 1 accept + ≥ 1 mesh when available; leftovers carry over. `warmUp` / `loadAllPending` ignore the budget.
+* Chunks out to renderDistance + 1 are generated and lit but not meshed; unload beyond that; leaving the rendered radius removes the mesh. Walking meshes exactly 1 chunk per newly visible chunk (tested). Loaded 289 → 361, meshed 289. Mob spawn (112) / despawn (128) stay inside the rendered radius (config invariant test).
+* Measured (same perf-check.mjs, same session before / after): walking rAF callback p95 34.4 → 10.5 ms, max 51.4 → 13.6 ms, long tasks 1 → 0; startup p95 36.9 → 12.9 ms (the one ~200 ms first-frame stall remains); triangles −9 % (edge faces now culled against real neighbours), draw calls unchanged, heap ~77 MB.
+* Codex review PASS_WITH_NOTES (first round). Its minor note (unload left keys in `lightChanged`) was tidied with an explicit delete; the set was already self-clearing in `flushMeshes`, so no functional change and no regression test.
 
 ## 2026-09-30 — Phase 8 optimisation 1: worker generation + mesh-once streaming
 
@@ -550,11 +557,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (68 files, 1121 tests)
+pnpm test → PASS (69 files, 1134 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 8 optimisation 2: time-based accept / mesh budget per frame (e.g. stop accepting + meshing after N ms) to flatten the remaining ~35 ms p95 streaming frames, plus an extra never-meshed ring to bring walking remeshes to ~1×; re-measure with the same perf script (scratchpad perf-check.mjs). Then greedy meshing once measured on real hardware.
+Phase 8 remaining: investigate the ~200 ms startup first-frame stall (split warm-up / shader compile / first upload with the probe), then mesh disposal audit + frustum culling check (three's per-object culling is on by default — verify chunk meshes have correct bounding spheres) and greedy meshing (needs real-hardware GPU numbers; light-aware: merge only equal-light faces).
