@@ -9,18 +9,10 @@ import { WORLD_CONFIG, MOB_CONFIG } from '../config/constants';
 import { EntityStore, type MobEntity } from './EntityStore';
 import { MOB_DEFINITIONS, MobType, mobDefinition } from './mobDefinitions';
 import type { Rng } from './mobAI';
+import { mulberry32 } from '../util/mulberry32';
 
-/** Small deterministic PRNG (mulberry32). Same seed -> same sequence, so mob spawning stays reproducible. */
-export function mulberry32(seed: number): Rng {
-  let state = seed >>> 0;
-  return (): number => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// Shared PRNG lives in src/util; re-exported so existing importers keep working.
+export { mulberry32 };
 
 const PASSIVE_DEFINITIONS = MOB_DEFINITIONS.filter((def) => def.hostile === null);
 const HOSTILE_DEFINITIONS = MOB_DEFINITIONS.filter((def) => def.hostile !== null);

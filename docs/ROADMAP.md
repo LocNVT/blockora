@@ -181,7 +181,7 @@ Player can encounter and fight mobs.
 * [ ] Village
 * [x] Ruins
 * [ ] Dungeon
-* [ ] Loot
+* [x] Loot
 * [x] Deterministic placement
 
 ### Exit criteria

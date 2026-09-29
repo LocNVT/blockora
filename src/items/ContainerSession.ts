@@ -5,9 +5,10 @@ import { itemRegistry, type ItemRegistry } from './ItemRegistry';
 import type { ItemStack } from './ItemStack';
 import { mergeStacks, splitHalf } from './ItemStack';
 
-/** Identifies one clickable slot across the inventory, crafting grid, and result preview. */
+/** Identifies one clickable slot across the inventory, crafting grid, chest container, and result preview. */
 export type SlotRef =
   | { readonly area: 'inventory'; readonly index: number }
+  | { readonly area: 'chest'; readonly index: number }
   | { readonly area: 'grid'; readonly index: number }
   | { readonly area: 'result' };
 
@@ -27,6 +28,8 @@ export class ContainerSession {
     private readonly grid: CraftingGrid,
     private readonly recipes: RecipeRegistry = recipeRegistry,
     private readonly itemReg: ItemRegistry = itemRegistry,
+    /** Open chest container, or null for the plain inventory/crafting screens. Slots use the same click rules. */
+    private readonly chest: Inventory | null = null,
   ) {}
 
   getCursor(): ItemStack | null {
@@ -66,14 +69,27 @@ export class ContainerSession {
   }
 
   private readSlot(ref: Exclude<SlotRef, { area: 'result' }>): ItemStack | null {
-    return ref.area === 'inventory' ? this.inventory.getSlot(ref.index) : this.grid.get(ref.index);
+    switch (ref.area) {
+      case 'inventory':
+        return this.inventory.getSlot(ref.index);
+      case 'chest':
+        return this.chest?.getSlot(ref.index) ?? null;
+      case 'grid':
+        return this.grid.get(ref.index);
+    }
   }
 
   private setSlot(ref: Exclude<SlotRef, { area: 'result' }>, stack: ItemStack | null): void {
-    if (ref.area === 'inventory') {
-      this.inventory.set(ref.index, stack);
-    } else {
-      this.grid.set(ref.index, stack);
+    switch (ref.area) {
+      case 'inventory':
+        this.inventory.set(ref.index, stack);
+        return;
+      case 'chest':
+        this.chest?.set(ref.index, stack);
+        return;
+      case 'grid':
+        this.grid.set(ref.index, stack);
+        return;
     }
   }
 

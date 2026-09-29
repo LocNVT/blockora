@@ -190,6 +190,7 @@ describe('ruin template', () => {
       BlockId.Stone,
       BlockId.Planks,
       BlockId.Gravel,
+      BlockId.Chest,
     ];
     for (const b of RUIN_TEMPLATE.blocks) {
       expect(allowed).toContain(b.blockId);

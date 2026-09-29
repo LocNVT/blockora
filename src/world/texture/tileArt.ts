@@ -1,5 +1,6 @@
 import type { AtlasLayout } from './atlasLayout';
 import type { TileName } from './tiles';
+import { mulberry32 } from '../../util/mulberry32';
 
 const RGBA_COMPONENTS = 4;
 const BYTE_MAX = 255;
@@ -10,21 +11,6 @@ interface Rgba {
   readonly g: number;
   readonly b: number;
   readonly a: number;
-}
-
-/**
- * Small deterministic PRNG (mulberry32). Same seed -> same sequence, which is
- * what makes `generateAtlasPixels` reproducible across runs/machines.
- */
-function mulberry32(seed: number): () => number {
-  let state = seed >>> 0;
-  return (): number => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 function clampByte(value: number): number {
