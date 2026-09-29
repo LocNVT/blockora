@@ -250,6 +250,51 @@ export const SURVIVAL_CONFIG = {
   appleDropChance: 0.05,
 } as const;
 
+export const MOB_CONFIG = {
+  /** Seconds between each attempted passive-mob spawn wave. */
+  spawnInterval: 5,
+  /** Max spawn attempts per wave (each attempt may fail its column checks). */
+  spawnAttemptsPerWave: 4,
+  /** Mobs never spawn closer than this to the player (blocks). */
+  minSpawnDistance: 24,
+  /** Mobs never spawn farther than this from the player (blocks); should stay within render distance. */
+  maxSpawnDistance: WORLD_CONFIG.renderDistance * WORLD_CONFIG.chunkWidth - 16,
+  /** Mobs despawn once farther than this from the player (blocks). */
+  despawnDistance: WORLD_CONFIG.renderDistance * WORLD_CONFIG.chunkWidth,
+  /** Global cap on simultaneously-alive passive mobs. */
+  maxPassiveMobs: 12,
+  /** Minimum sky light (0..15) a spawn column must have (keeps mobs out of dark caves). */
+  minSpawnSkyLight: 10,
+  /** Gravity applied to mobs (blocks/s^2); matches the player for consistent falling feel. */
+  gravity: 18,
+  /** Largest downward speed gravity can accelerate a mob to (blocks/s). */
+  maxFallSpeed: 40,
+  /** Horizontal velocity damping applied per second while a mob is on the ground. */
+  groundFriction: 8,
+  /** Radians/s the mob turns toward its target yaw while wandering. */
+  turnSpeed: 3,
+  /** A 1-block step ahead (auto-jump) needs at least this much upward jump velocity (rise = v^2/(2*gravity), tuned to clear 1 block with margin but not 2). */
+  stepJumpVelocity: 6.5,
+  /** Never wander toward a look-ahead cell that would drop more than this many blocks. */
+  maxSafeDropAhead: 3,
+} as const;
+
+export const PIG_CONFIG = {
+  halfWidth: 0.45,
+  height: 0.9,
+  walkSpeed: 1.2,
+  /** Seconds spent idle before picking a new wander target, min/max range. */
+  idleDurationMin: 1.5,
+  idleDurationMax: 4,
+  /** Seconds spent wandering toward the current target yaw, min/max range. */
+  wanderDurationMin: 2,
+  wanderDurationMax: 5,
+  /** Relative likelihood of spawning a Pig vs other passive mobs (future use). */
+  spawnWeight: 1,
+  /** Max pigs allowed per despawn-radius area (kept simple: a flat per-type share of maxPassiveMobs). */
+  maxPerArea: 8,
+} as const;
+
 export const ITEM_DROP_CONFIG = {
   /** Downward acceleration applied to falling drops (blocks/s^2). */
   gravity: 18,
