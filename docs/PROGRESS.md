@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 5: mob health/damage + player melee combat + drops.
+Phase 5: hostile mob (zombie-like) with Target / Chase / Attack AI.
 
 ---
 
@@ -165,6 +165,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Item drops use the lit standard material (stay bright in dark caves); lighting is flat per face (no smooth lighting / AO); chunk shader duplicates `src/renderer/lightShading.ts` math (keep in sync).
 * A greedy mesher must only merge faces with equal light.
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
+* Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * `mulberry32` is duplicated in `src/entities/mobSpawning.ts` and `src/world/texture/tileArt.ts`.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
@@ -245,6 +246,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-29 — Phase 5 mob combat + drops
+
+* Mob health / hurt invulnerability / hurt flash / knockback / death (`src/entities/mobCombat.ts`), `flee` AI state for passive mobs (faster, away from attacker), raw pork drop (1–3, food +3).
+* Player melee: LMB-press edge (`attackPressed`), entity raycast (`src/entities/entityRaycast.ts`, slab vs mob AABB) before block breaking — nearer target wins, ties favour the mob (`src/gameplay/combatActions.ts`); damage = hand 1 + tool-type bonus, 0.4 s cooldown, reach 6. `COMBAT_CONFIG`.
+* Fix: physics overwrote horizontal velocity every frame, cancelling knockback; mobs now keep knockback velocity until they land (`knockedBack`) + regression test.
+* Verified in real Chrome (Playwright, temporary QA hooks, removed): 10 hand hits kill a pig, flee after each hit, red hurt flash, drop spawned, no page errors.
 
 ## 2026-09-29 — Phase 5 entity system + passive pig
 
@@ -477,11 +485,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (49 files, 842 tests)
+pnpm test → PASS (52 files, 896 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 5 combat: mob health + hurt/knockback + death, player melee (LMB on a mob via entity raycast before block raycast, damage by held item), Flee state for passive mobs when hit, drops on death (raw pork item as food).
+Phase 5 hostile mob: zombie-like mob definition + renderer parts, Target (acquire player within range) → Chase (steer toward player, reuse physics/auto-jump) → Attack (melee player on contact with cooldown, via PlayerHealth damage) states, spawns only in low light (night / caves), burns or despawns in daylight kept simple.

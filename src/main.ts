@@ -33,6 +33,9 @@ import { createSolidQuery } from './world/SolidQuery';
 import { createTargetQuery } from './world/TargetQuery';
 import { createFluidQuery } from './world/FluidQuery';
 import { createVoxelRaycastBlockHit, raycastBlock } from './world/voxelRaycast';
+import { createEntityRaycastHit, raycastEntities } from './entities/entityRaycast';
+import { resolveAttackOrBreak, performMobAttack } from './gameplay/combatActions';
+import { mobDefinition } from './entities/mobDefinitions';
 import { worldToChunkCoord } from './world/chunkCoords';
 import { MeshBuffers, remeshChunks } from './world/mesher';
 import { applyLightAndCollectRemesh } from './world/blockEdit';
@@ -52,6 +55,7 @@ import { playerAabb } from './player/voxelCollision';
 import { validateBlockTextures } from './world/texture/blockFaceTiles';
 import { TILE_NAMES } from './world/texture/tiles';
 import {
+  COMBAT_CONFIG,
   DAY_NIGHT_CONFIG,
   PLAYER_CONFIG,
   SURVIVAL_CONFIG,
@@ -234,6 +238,9 @@ async function bootstrap(): Promise<void> {
   const rayOrigin = { x: 0, y: 0, z: 0 };
   const rayDirection = { x: 0, y: 0, z: 0 };
   const rayHit = createVoxelRaycastBlockHit();
+  const entityRayHit = createEntityRaycastHit();
+  /** Seconds remaining before the player may melee-attack again (COMBAT_CONFIG.attackCooldown). */
+  let attackCooldownRemaining = 0;
 
   function onWindowResize(): void {
     resizeCamera(camera, window.innerWidth / window.innerHeight);
@@ -402,6 +409,10 @@ async function bootstrap(): Promise<void> {
       isTargetable,
     );
 
+    if (attackCooldownRemaining > 0) {
+      attackCooldownRemaining = Math.max(0, attackCooldownRemaining - dt);
+    }
+
     if (!inventoryScreen.isOpen && !playerHealth.isDead) {
       applyHotbarInput(inventory, input.consumeHotbarInput());
 
@@ -409,6 +420,31 @@ async function bootstrap(): Promise<void> {
       const useAction = actions.placePressed && hit !== null ? blockUseAction(hit.blockId) : null;
       const selectedItemId = inventory.selectedStack()?.itemId;
       const selectedFood = selectedItemId !== undefined ? itemRegistry.foodFor(selectedItemId) : undefined;
+
+      // Entity-vs-block priority: a mob closer than (or equally close as) the
+      // block under the crosshair wins LMB this frame — it is attacked
+      // (one-shot per press, respecting the cooldown) and block-breaking is
+      // not started/continued this frame (see `resolveAttackOrBreak`).
+      const entityHit = raycastEntities(
+        rayOrigin,
+        rayDirection,
+        COMBAT_CONFIG.attackReach,
+        entityStore.all(),
+        mobDefinition,
+        entityRayHit,
+      );
+      const attacking = entityHit !== null && resolveAttackOrBreak(entityHit, hit) === 'attack';
+
+      if (attacking && entityHit !== null) {
+        if (actions.attackPressed && attackCooldownRemaining <= 0) {
+          const target = entityStore.get(entityHit.mobId);
+          if (target !== undefined) {
+            const tool = selectedItemId !== undefined ? itemRegistry.toolFor(selectedItemId) : undefined;
+            performMobAttack(target, rayOrigin, tool, entityStore, drops, inventory, itemRegistry, mobRng);
+            attackCooldownRemaining = COMBAT_CONFIG.attackCooldown;
+          }
+        }
+      }
 
       if (useAction === 'crafting_table') {
         // Crafting-table use wins on the press frame even if a food item is
@@ -421,7 +457,10 @@ async function bootstrap(): Promise<void> {
         const tool = selectedItemId !== undefined ? itemRegistry.toolFor(selectedItemId) : undefined;
         const target = hit !== null ? { x: hit.x, y: hit.y, z: hit.z } : null;
         const duration = hit !== null ? breakDuration(blockRegistry.get(hit.blockId), tool) : 0;
-        const breakState = breakProgress.update(target, input.isBreakHeld(), dt, duration);
+        // Attacking this frame forces break-held to false: an entity in
+        // front of a block never lets that block start/continue breaking.
+        const breakHeld = !attacking && input.isBreakHeld();
+        const breakState = breakProgress.update(target, breakHeld, dt, duration);
 
         // Selected item is food: RMB is "eat" instead of "place" (no block
         // placement while holding food). Break (LMB) still works normally.
@@ -453,7 +492,7 @@ async function bootstrap(): Promise<void> {
             tool,
             inventory,
           );
-        } else if (actions.placePressed && selectedFood === undefined) {
+        } else if (actions.placePressed && selectedFood === undefined && !attacking) {
           edited = applyPlace(
             chunkStore,
             lightEngine,

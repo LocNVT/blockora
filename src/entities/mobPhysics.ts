@@ -116,28 +116,33 @@ export function updateMobPhysics(
   isSolid: SolidQuery,
   isFluid: SolidQuery,
 ): void {
-  const { halfWidth, height, walkSpeed } = def;
+  const { halfWidth, height, walkSpeed, fleeSpeed } = def;
 
   let moveX = 0;
   let moveZ = 0;
-  if (mob.ai.state === 'wander') {
+  if (mob.ai.state === 'wander' || mob.ai.state === 'flee') {
+    const speed = mob.ai.state === 'flee' ? fleeSpeed : walkSpeed;
     const blockedByHazard = mob.onGround && aheadIsUnsafe(mob.position, mob.yaw, isSolid, isFluid);
     if (!blockedByHazard) {
-      moveX = -Math.sin(mob.yaw) * walkSpeed;
-      moveZ = -Math.cos(mob.yaw) * walkSpeed;
+      moveX = -Math.sin(mob.yaw) * speed;
+      moveZ = -Math.cos(mob.yaw) * speed;
     }
   }
 
-  if (
-    mob.onGround &&
-    (moveX !== 0 || moveZ !== 0) &&
-    shouldAutoJump(mob.position, mob.yaw, height, isSolid)
-  ) {
-    mob.velocity.y = MOB_CONFIG.stepJumpVelocity;
-  }
+  // While knocked back (airborne after a hit) the mob keeps the knockback
+  // velocity instead of steering, so the horizontal push isn't overwritten.
+  if (!mob.knockedBack) {
+    if (
+      mob.onGround &&
+      (moveX !== 0 || moveZ !== 0) &&
+      shouldAutoJump(mob.position, mob.yaw, height, isSolid)
+    ) {
+      mob.velocity.y = MOB_CONFIG.stepJumpVelocity;
+    }
 
-  mob.velocity.x = moveX;
-  mob.velocity.z = moveZ;
+    mob.velocity.x = moveX;
+    mob.velocity.z = moveZ;
+  }
   mob.velocity.y = Math.max(mob.velocity.y - MOB_CONFIG.gravity * dt, -MOB_CONFIG.maxFallSpeed);
 
   const aabb = buildMobAabb(mob.position, halfWidth, height);
@@ -171,6 +176,9 @@ export function updateMobPhysics(
 
   const movingDown = dy < 0;
   mob.onGround = collidedY && movingDown;
+  if (mob.onGround) {
+    mob.knockedBack = false;
+  }
 
   if (mob.onGround) {
     applyGroundFriction(mob, dt);

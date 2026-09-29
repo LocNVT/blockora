@@ -3,6 +3,8 @@ import { updateMobPhysics } from '../src/entities/mobPhysics';
 import { EntityStore } from '../src/entities/EntityStore';
 import { MobType, mobDefinition } from '../src/entities/mobDefinitions';
 import type { SolidQuery } from '../src/world/SolidQuery';
+import { COMBAT_CONFIG, MOB_CONFIG } from '../src/config/constants';
+import { damageMob } from '../src/entities/mobCombat';
 
 const def = mobDefinition(MobType.Pig);
 const noFluid: SolidQuery = () => false;
@@ -83,6 +85,55 @@ describe('updateMobPhysics: horizontal collision', () => {
     stepMany(mob, 600, 1 / 60, isSolid);
 
     // Should be halted well before z would go very negative, and not tunnel through.
+    expect(mob.position.z).toBeGreaterThan(-3);
+  });
+});
+
+describe('updateMobPhysics: flee state', () => {
+  it('moves faster than wander (def.fleeSpeed > def.walkSpeed) while state is flee', () => {
+    expect(def.fleeSpeed).toBeGreaterThan(def.walkSpeed);
+
+    const dt = 1 / 60;
+    const isSolid: SolidQuery = (_x, y, _z) => y === 0;
+
+    const store = new EntityStore();
+    const fleeingMob = store.spawn(MobType.Pig, { x: 0.5, y: 1, z: 0.5 }, 0); // yaw 0 -> -Z movement
+    fleeingMob.ai.state = 'flee';
+    fleeingMob.ai.targetYaw = 0;
+    fleeingMob.onGround = true;
+
+    const wanderingMob = store.spawn(MobType.Pig, { x: 0.5, y: 1, z: 0.5 }, 0);
+    wanderingMob.ai.state = 'wander';
+    wanderingMob.ai.targetYaw = 0;
+    wanderingMob.onGround = true;
+
+    // Same ground-friction physics apply to both states (see mobPhysics.ts),
+    // so comparing horizontal speed after settling on the ground isolates
+    // exactly the speed used (fleeSpeed vs walkSpeed) rather than asserting
+    // on the raw pre-friction constant.
+    updateMobPhysics(fleeingMob, def, dt, isSolid, noFluid);
+    updateMobPhysics(wanderingMob, def, dt, isSolid, noFluid);
+
+    const fleeSpeedMeasured = Math.hypot(fleeingMob.velocity.x, fleeingMob.velocity.z);
+    const wanderSpeedMeasured = Math.hypot(wanderingMob.velocity.x, wanderingMob.velocity.z);
+    const groundDamping = Math.max(0, 1 - MOB_CONFIG.groundFriction * dt);
+
+    expect(fleeSpeedMeasured).toBeGreaterThan(wanderSpeedMeasured);
+    expect(fleeSpeedMeasured).toBeCloseTo(def.fleeSpeed * groundDamping, 5);
+    expect(wanderSpeedMeasured).toBeCloseTo(def.walkSpeed * groundDamping, 5);
+  });
+
+  it('still respects wall collision while fleeing', () => {
+    const store = new EntityStore();
+    const mob = store.spawn(MobType.Pig, { x: 0.5, y: 1, z: 0.5 }, 0);
+    mob.ai.state = 'flee';
+    mob.ai.targetYaw = 0;
+    mob.onGround = true;
+
+    const isSolid: SolidQuery = (_x, y, z) => y === 0 || z <= -3;
+
+    stepMany(mob, 600, 1 / 60, isSolid);
+
     expect(mob.position.z).toBeGreaterThan(-3);
   });
 });
@@ -179,5 +230,44 @@ describe('updateMobPhysics: determinism', () => {
     }
 
     expect(run()).toEqual(run());
+  });
+});
+
+// Regression: physics overwrote velocity.x/z with the steering direction every
+// frame, so the horizontal knockback set by damageMob was lost on the next tick.
+describe('updateMobPhysics: knockback', () => {
+  const flatFloor: SolidQuery = (_x, y, _z) => y === 0;
+
+  function landedIdlePig(): ReturnType<EntityStore['spawn']> {
+    const mob = new EntityStore().spawn(MobType.Pig, { x: 0.5, y: 1, z: 0.5 });
+    stepMany(mob, 10, 1 / 60, flatFloor);
+    return mob;
+  }
+
+  it('pushes a hit mob horizontally away from the attacker before it lands', () => {
+    const mob = landedIdlePig();
+    const startX = mob.position.x;
+    damageMob(mob, 1, { x: startX - 2, y: 1, z: 0.5 }, def);
+    // Freeze steering: knockback alone must move it (flee would move it too).
+    mob.ai.state = 'idle';
+
+    stepMany(mob, 120, 1 / 60, flatFloor);
+
+    const airtime = (2 * COMBAT_CONFIG.knockbackVerticalSpeed) / MOB_CONFIG.gravity;
+    expect(mob.position.x - startX).toBeGreaterThan(COMBAT_CONFIG.knockbackHorizontalSpeed * airtime * 0.8);
+    expect(mob.onGround).toBe(true);
+    expect(mob.knockedBack).toBe(false);
+  });
+
+  it('resumes normal steering after landing', () => {
+    const mob = landedIdlePig();
+    damageMob(mob, 1, { x: -2, y: 1, z: 0.5 }, def);
+    mob.ai.state = 'idle';
+    stepMany(mob, 120, 1 / 60, flatFloor);
+    const landedX = mob.position.x;
+
+    stepMany(mob, 60, 1 / 60, flatFloor);
+
+    expect(mob.position.x).toBeCloseTo(landedX, 3);
   });
 });

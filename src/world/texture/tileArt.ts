@@ -89,6 +89,9 @@ const PALETTE = {
   appleRedDark: { r: 160, g: 30, b: 30, a: 255 },
   appleStem: { r: 96, g: 68, b: 40, a: 255 },
   appleLeaf: { r: 70, g: 130, b: 50, a: 255 },
+  rawPork: { r: 224, g: 141, b: 145, a: 255 },
+  rawPorkDark: { r: 196, g: 112, b: 118, a: 255 },
+  rawPorkFat: { r: 240, g: 205, b: 200, a: 255 },
 } as const satisfies Record<string, Rgba>;
 
 function speckled(base: Rgba, dark: Rgba, jitterAmount: number): Painter {
@@ -295,6 +298,29 @@ function applePainter(): Painter {
   };
 }
 
+/** Small raw-pork icon: a rounded pinkish meat slab with a fat-marbling streak, transparent elsewhere. */
+function rawPorkPainter(): Painter {
+  return (x, y, size, rng): Rgba => {
+    const cx = size / 2;
+    const cy = size / 2;
+    // Slightly wider than tall, like a cut slab rather than a round fruit.
+    const dx = (x - cx) / (size * 0.4);
+    const dy = (y - cy) / (size * 0.3);
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      return PALETTE.transparent;
+    }
+
+    const fatBand = Math.abs(x - y - size * 0.1) <= 1.2;
+    if (fatBand) {
+      return jitter(PALETTE.rawPorkFat, 6, rng);
+    }
+
+    const useDark = rng() < 0.3;
+    return jitter(useDark ? PALETTE.rawPorkDark : PALETTE.rawPork, 10, rng);
+  };
+}
+
 function fallbackPainter(): Painter {
   return (x, y, _size, _rng): Rgba => {
     const checker = (x + y) % 2 === 0;
@@ -333,6 +359,7 @@ const PAINTERS: Partial<Record<TileName, Painter>> = {
   stone_axe: toolPainter(PALETTE.toolHeadStone, axeHeadTest),
   stone_shovel: toolPainter(PALETTE.toolHeadStone, shovelHeadTest),
   apple: applePainter(),
+  raw_pork: rawPorkPainter(),
 };
 
 function painterFor(name: string): Painter {

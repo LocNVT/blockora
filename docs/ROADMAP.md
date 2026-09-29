@@ -165,9 +165,9 @@ Basic survival loop works.
 * [ ] Target AI
 * [ ] Chase AI
 * [ ] Attack AI
-* [ ] Death
-* [ ] Drops
-* [ ] Player combat
+* [x] Death
+* [x] Drops
+* [x] Player combat
 
 ### Exit criteria
 

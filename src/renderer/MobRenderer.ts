@@ -15,6 +15,9 @@ const PIG_BODY_COLOR = new THREE.Color(0xe8a6b0);
 const PIG_SNOUT_COLOR = new THREE.Color(0xd68a96);
 const PIG_LEG_COLOR = new THREE.Color(0xd08c98);
 
+/** Tint multiplied into a mob's part colors while `hurtFlashTimer > 0` (see `MobEntity`). */
+const HURT_FLASH_TINT = new THREE.Color(0xff3333);
+
 /** Box half-extents (blocks) for each pig body part, an original blocky low-poly look. */
 const PIG_BODY_SIZE = { x: 0.5, y: 0.45, z: 0.75 };
 const PIG_HEAD_SIZE = { x: 0.4, y: 0.4, z: 0.4 };
@@ -133,6 +136,15 @@ export class MobRenderer {
     return lightCurve(level);
   }
 
+  /** `base` scaled by voxel-light `brightness`, further tinted red while `hurt` (hurtFlashTimer > 0). Writes into `dummyColor`. */
+  private shadeInto(base: THREE.Color, brightness: number, hurt: boolean): THREE.Color {
+    dummyColor.copy(base).multiplyScalar(brightness);
+    if (hurt) {
+      dummyColor.multiply(HURT_FLASH_TINT);
+    }
+    return dummyColor;
+  }
+
   /**
    * Rebuilds every instanced mesh's transforms/colors from the current mob
    * list. Only Pig is implemented (Phase 5 first slice); other mob types are
@@ -169,6 +181,7 @@ export class MobRenderer {
       this.walkedDistanceById.set(pig.id, distance);
 
       const brightness = this.brightnessAt(pig.position.x, pig.position.y + PIG_BODY_OFFSET.y, pig.position.z);
+      const hurt = pig.hurtFlashTimer > 0;
 
       const cosYaw = Math.cos(pig.yaw);
       const sinYaw = Math.sin(pig.yaw);
@@ -183,22 +196,19 @@ export class MobRenderer {
       dummyPosition.set(pig.position.x + worldOffset.x, pig.position.y + worldOffset.y, pig.position.z + worldOffset.z);
       dummyMatrix.compose(dummyPosition, dummyQuaternion, dummyScale);
       bodyBucket.mesh.setMatrixAt(i, dummyMatrix);
-      dummyColor.copy(PIG_BODY_COLOR).multiplyScalar(brightness);
-      bodyBucket.mesh.setColorAt(i, dummyColor);
+      bodyBucket.mesh.setColorAt(i, this.shadeInto(PIG_BODY_COLOR, brightness, hurt));
 
       rotateAndPlace(PIG_HEAD_OFFSET.x, PIG_HEAD_OFFSET.y, PIG_HEAD_OFFSET.z);
       dummyPosition.set(pig.position.x + worldOffset.x, pig.position.y + worldOffset.y, pig.position.z + worldOffset.z);
       dummyMatrix.compose(dummyPosition, dummyQuaternion, dummyScale);
       headBucket.mesh.setMatrixAt(i, dummyMatrix);
-      dummyColor.copy(PIG_BODY_COLOR).multiplyScalar(brightness);
-      headBucket.mesh.setColorAt(i, dummyColor);
+      headBucket.mesh.setColorAt(i, this.shadeInto(PIG_BODY_COLOR, brightness, hurt));
 
       rotateAndPlace(PIG_SNOUT_OFFSET.x, PIG_SNOUT_OFFSET.y, PIG_SNOUT_OFFSET.z);
       dummyPosition.set(pig.position.x + worldOffset.x, pig.position.y + worldOffset.y, pig.position.z + worldOffset.z);
       dummyMatrix.compose(dummyPosition, dummyQuaternion, dummyScale);
       snoutBucket.mesh.setMatrixAt(i, dummyMatrix);
-      dummyColor.copy(PIG_SNOUT_COLOR).multiplyScalar(brightness);
-      snoutBucket.mesh.setColorAt(i, dummyColor);
+      snoutBucket.mesh.setColorAt(i, this.shadeInto(PIG_SNOUT_COLOR, brightness, hurt));
 
       for (let legIndex = 0; legIndex < LEG_OFFSETS.length; legIndex += 1) {
         const leg = LEG_OFFSETS[legIndex];
@@ -216,8 +226,7 @@ export class MobRenderer {
 
         const legInstanceIndex = i * LEG_OFFSETS.length + legIndex;
         legBucket.mesh.setMatrixAt(legInstanceIndex, dummyMatrix);
-        dummyColor.copy(PIG_LEG_COLOR).multiplyScalar(brightness);
-        legBucket.mesh.setColorAt(legInstanceIndex, dummyColor);
+        legBucket.mesh.setColorAt(legInstanceIndex, this.shadeInto(PIG_LEG_COLOR, brightness, hurt));
       }
     }
 
