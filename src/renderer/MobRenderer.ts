@@ -50,7 +50,29 @@ const LEG_SWING_AMPLITUDE = 0.5;
 /** Swing cycles per block walked. */
 const LEG_SWING_FREQUENCY = 2.5;
 
-type PartKey = 'body' | 'head' | 'snout' | 'leg';
+/** Original green-grey shambler palette (procedural, no image assets). */
+const SHAMBLER_SKIN_COLOR = new THREE.Color(0x6f8f6a);
+const SHAMBLER_TORSO_COLOR = new THREE.Color(0x3f5f66);
+const SHAMBLER_LEG_COLOR = new THREE.Color(0x484a63);
+
+/** Shambler part boxes (blocks): 0.75 legs + 0.7 torso + 0.35 head = 1.8 tall. */
+const SHAMBLER_LEG_SIZE = { x: 0.25, y: 0.75, z: 0.25 };
+const SHAMBLER_TORSO_SIZE = { x: 0.55, y: 0.7, z: 0.3 };
+const SHAMBLER_HEAD_SIZE = { x: 0.35, y: 0.35, z: 0.35 };
+const SHAMBLER_ARM_SIZE = { x: 0.2, y: 0.7, z: 0.2 };
+const SHAMBLER_HIP_Y = SHAMBLER_LEG_SIZE.y;
+const SHAMBLER_LEG_X = 0.14;
+const SHAMBLER_TORSO_Y = SHAMBLER_HIP_Y + SHAMBLER_TORSO_SIZE.y / 2;
+const SHAMBLER_HEAD_Y = SHAMBLER_HIP_Y + SHAMBLER_TORSO_SIZE.y + SHAMBLER_HEAD_SIZE.y / 2;
+const SHAMBLER_SHOULDER_Y = SHAMBLER_HIP_Y + SHAMBLER_TORSO_SIZE.y - 0.1;
+const SHAMBLER_SHOULDER_X = SHAMBLER_TORSO_SIZE.x / 2 + SHAMBLER_ARM_SIZE.x / 2;
+/** Arms are held straight forward (pitch +90 degrees about the shoulder) with a small sway. */
+const SHAMBLER_ARM_FORWARD_PITCH = Math.PI / 2;
+const SHAMBLER_ARM_SWAY = 0.2;
+const SHAMBLER_LEG_SWING = 0.6;
+const SHAMBLER_SWING_FREQUENCY = 1.6;
+
+type PartKey = 'body' | 'head' | 'snout' | 'leg' | 'sTorso' | 'sHead' | 'sArm' | 'sLeg';
 
 interface PartBucket {
   mesh: THREE.InstancedMesh;
@@ -96,6 +118,10 @@ export class MobRenderer {
       head: createBoxGeometry(PIG_HEAD_SIZE),
       snout: createBoxGeometry(PIG_SNOUT_SIZE),
       leg: createBoxGeometry(PIG_LEG_SIZE),
+      sTorso: createBoxGeometry(SHAMBLER_TORSO_SIZE),
+      sHead: createBoxGeometry(SHAMBLER_HEAD_SIZE),
+      sArm: createBoxGeometry(SHAMBLER_ARM_SIZE),
+      sLeg: createBoxGeometry(SHAMBLER_LEG_SIZE),
     };
   }
 
@@ -147,13 +173,13 @@ export class MobRenderer {
 
   /**
    * Rebuilds every instanced mesh's transforms/colors from the current mob
-   * list. Only Pig is implemented (Phase 5 first slice); other mob types are
-   * skipped (rendered as nothing) rather than throwing, so future mob types
-   * can be added to mobDefinitions without breaking rendering immediately.
+   * list. Pig and Shambler are implemented; any other mob type renders as
+   * nothing rather than throwing.
    */
   update(mobs: readonly MobEntity[], dt: number): void {
     const frameDt = Math.max(0, dt);
     const pigs = mobs.filter((mob) => mob.type === MobType.Pig);
+    const shamblers = mobs.filter((mob) => mob.type === MobType.Shambler);
 
     let bodyBucket = this.bucketForPart('body');
     let headBucket = this.bucketForPart('head');
@@ -242,10 +268,104 @@ export class MobRenderer {
       }
     }
 
+    this.updateShamblers(shamblers, frameDt, liveIds);
+
     // Drop walked-distance tracking for mobs that no longer exist.
     for (const id of this.walkedDistanceById.keys()) {
       if (!liveIds.has(id)) {
         this.walkedDistanceById.delete(id);
+      }
+    }
+  }
+
+  /** Grows `part`'s bucket if needed and returns it (with count reset to `needed`). */
+  private readyBucket(part: PartKey, needed: number): PartBucket {
+    let bucket = this.bucketForPart(part);
+    if (needed > bucket.capacity) {
+      bucket = this.growBucket(part, bucket, needed);
+    }
+    bucket.mesh.count = needed;
+    return bucket;
+  }
+
+  /**
+   * Shambler model: torso, head, 2 forward-held arms, 2 legs; one shared
+   * InstancedMesh per part type (4 draw calls total for every shambler).
+   * Arms sway and legs swing with distance walked.
+   */
+  private updateShamblers(shamblers: readonly MobEntity[], frameDt: number, liveIds: Set<number>): void {
+    const torsoBucket = this.readyBucket('sTorso', shamblers.length);
+    const headBucket = this.readyBucket('sHead', shamblers.length);
+    const armBucket = this.readyBucket('sArm', shamblers.length * 2);
+    const legBucket = this.readyBucket('sLeg', shamblers.length * 2);
+
+    for (let i = 0; i < shamblers.length; i += 1) {
+      const mob = shamblers[i];
+      if (mob === undefined) {
+        continue;
+      }
+      liveIds.add(mob.id);
+
+      const speed = Math.hypot(mob.velocity.x, mob.velocity.z);
+      const distance = (this.walkedDistanceById.get(mob.id) ?? 0) + speed * frameDt;
+      this.walkedDistanceById.set(mob.id, distance);
+
+      const brightness = this.brightnessAt(mob.position.x, mob.position.y + SHAMBLER_TORSO_Y, mob.position.z);
+      const hurt = mob.hurtFlashTimer > 0;
+      const cosYaw = Math.cos(mob.yaw);
+      const sinYaw = Math.sin(mob.yaw);
+      const place = (lx: number, ly: number, lz: number, pitch: number): void => {
+        dummyEuler.set(pitch, mob.yaw, 0, 'YXZ');
+        dummyQuaternion.setFromEuler(dummyEuler);
+        dummyPosition.set(
+          mob.position.x + cosYaw * lx + sinYaw * lz,
+          mob.position.y + ly,
+          mob.position.z - sinYaw * lx + cosYaw * lz,
+        );
+        dummyMatrix.compose(dummyPosition, dummyQuaternion, dummyScale);
+      };
+
+      place(0, SHAMBLER_TORSO_Y, 0, 0);
+      torsoBucket.mesh.setMatrixAt(i, dummyMatrix);
+      torsoBucket.mesh.setColorAt(i, this.shadeInto(SHAMBLER_TORSO_COLOR, brightness, hurt));
+
+      place(0, SHAMBLER_HEAD_Y, 0, 0);
+      headBucket.mesh.setMatrixAt(i, dummyMatrix);
+      headBucket.mesh.setColorAt(i, this.shadeInto(SHAMBLER_SKIN_COLOR, brightness, hurt));
+
+      const phase = distance * SHAMBLER_SWING_FREQUENCY * Math.PI * 2 + mob.id;
+      const moveScale = Math.min(1, speed);
+      for (let side = 0; side < 2; side += 1) {
+        const sign = side === 0 ? -1 : 1;
+        // Limb pivots at its top; centre sits half a limb length along the rotated -Y axis.
+        const armPitch = SHAMBLER_ARM_FORWARD_PITCH + Math.sin(phase * 0.5 + side * Math.PI) * SHAMBLER_ARM_SWAY;
+        const armHalf = SHAMBLER_ARM_SIZE.y / 2;
+        place(
+          sign * SHAMBLER_SHOULDER_X,
+          SHAMBLER_SHOULDER_Y - armHalf * Math.cos(armPitch),
+          -armHalf * Math.sin(armPitch),
+          armPitch,
+        );
+        armBucket.mesh.setMatrixAt(i * 2 + side, dummyMatrix);
+        armBucket.mesh.setColorAt(i * 2 + side, this.shadeInto(SHAMBLER_SKIN_COLOR, brightness, hurt));
+
+        const legPitch = Math.sin(phase + side * Math.PI) * SHAMBLER_LEG_SWING * moveScale;
+        const legHalf = SHAMBLER_LEG_SIZE.y / 2;
+        place(
+          sign * SHAMBLER_LEG_X,
+          SHAMBLER_HIP_Y - legHalf * Math.cos(legPitch),
+          -legHalf * Math.sin(legPitch),
+          legPitch,
+        );
+        legBucket.mesh.setMatrixAt(i * 2 + side, dummyMatrix);
+        legBucket.mesh.setColorAt(i * 2 + side, this.shadeInto(SHAMBLER_LEG_COLOR, brightness, hurt));
+      }
+    }
+
+    for (const bucket of [torsoBucket, headBucket, armBucket, legBucket]) {
+      bucket.mesh.instanceMatrix.needsUpdate = true;
+      if (bucket.mesh.instanceColor !== null) {
+        bucket.mesh.instanceColor.needsUpdate = true;
       }
     }
   }

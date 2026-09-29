@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (Codex sandbox was read-only). Reviewed commit 3d1066d._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Reviewed the uncommitted Shambler diff after two FAIL rounds (cave scan stopping at a lit surface; attacks through block corners) — both fixed with regression tests._
 
 Status: PASS_WITH_NOTES
 
-Task:  
-Phase 5 mob combat + knockback + pig drops
+Task:
+Phase 5 hostile mob (shambler) with Target / Chase / Attack AI
 
-Summary:  
-Reviewed commit `3d1066d`. The combat, entity raycast, knockback, flee behavior, and pig drops are coherently integrated. No concrete critical or important issues found.
+Summary:
+Reviewed hostile AI/combat, spawning and daylight handling, shambler rendering, tests, and project instructions. No concrete critical or important issues found.
 
 Critical:
 - None
@@ -17,41 +17,36 @@ Important:
 - None
 
 Minor:
-- `MobRenderer.update` allocates a filtered array and a `Set` each frame. The current mob cap keeps this bounded; profile before increasing it.
-- `docs/ROADMAP.md` marks some Phase 5 work complete while `docs/PROGRESS.md` still has the Phase 5 checklist unchecked. The current task and latest completed work are documented.
+- `docs/PROGRESS.md` still describes hostile mobs as pending and its Next Task repeats this implementation task. Update it after implementation validation so roadmap state and task handoff match the code.
 
 Required fixes:
 - None
 
 Tests:
-- Added tests cover combat damage, drops, raycast selection, input edges, flee behavior, and knockback. Tests and build were not run during this review.
+- `tests/shambler.test.ts` covers state transitions, attack cooldown and line of sight, death targeting, chase movement, combat, light-based spawning, caps, deterministic spawning, and daylight despawn. Tests were inspected but not run during this review.
 
 Architecture:
-- Combat actions, simulation, and rendering remain separated. The committed progress notes describe the completed slice. The uncommitted `CLAUDE.md` edit was ignored.
+- AI receives player state and damage through an injected context; simulation remains separate from player and renderer code. The existing shared voxel physics and entity store are reused.
 
 Performance:
-- Entity raycast iterates live mobs directly and supports a reusable hit object. Rendering uses instanced meshes and disposes its geometry, material, and meshes.
+- Hostile population is bounded. Rendering uses instanced meshes and disposes geometries/materials in `MobRenderer.dispose()`.
 
 Reviewed files:
-- `CLAUDE.md` (review instructions only; ignored uncommitted edit)
+- `CLAUDE.md`
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
 - `src/config/constants.ts`
 - `src/entities/EntityStore.ts`
-- `src/entities/entityRaycast.ts`
 - `src/entities/mobAI.ts`
 - `src/entities/mobCombat.ts`
 - `src/entities/mobDefinitions.ts`
 - `src/entities/mobPhysics.ts`
+- `src/entities/mobSpawning.ts`
 - `src/entities/updateMobs.ts`
-- `src/gameplay/combatActions.ts`
-- `src/items/items.ts`
 - `src/main.ts`
-- `src/player/InputController.ts`
 - `src/renderer/MobRenderer.ts`
-- `src/world/texture/tileArt.ts`
-- `src/world/texture/tiles.ts`
-- Related combat, raycast, input, AI, and physics tests
+- `src/world/voxelRaycast.ts`
+- `tests/shambler.test.ts`
 
-Recommendation:  
-Continue
+Recommendation:
+Continue after progress documentation is updated.

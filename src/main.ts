@@ -547,6 +547,12 @@ async function bootstrap(): Promise<void> {
       isFluid,
       rng: mobRng,
       playerPosition: playerState.position,
+      playerAlive: !playerHealth.isDead,
+      daylight: daylightFactor(gameTime.timeOfDay, DAY_NIGHT_CONFIG),
+      // PlayerHealth ignores damage while dead or invulnerable.
+      onAttackPlayer: (damage: number): void => {
+        playerHealth.damage(damage, 'generic');
+      },
     });
     mobRenderer.update(entityStore.all(), dt);
 

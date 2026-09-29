@@ -277,6 +277,61 @@ export const MOB_CONFIG = {
   stepJumpVelocity: 6.5,
   /** Never wander toward a look-ahead cell that would drop more than this many blocks. */
   maxSafeDropAhead: 3,
+  /** Global cap on simultaneously-alive hostile mobs (separate from maxPassiveMobs). */
+  maxHostileMobs: 8,
+  /** Hostile spawn attempts per spawn wave (each may fail its column/light checks). */
+  hostileSpawnAttemptsPerWave: 4,
+  /** Hostile mobs spawn only where effective light (max(sky x daylight scale, block)) is at or below this (0..15). */
+  hostileMaxSpawnLight: 7,
+  /** Cave spawn search: candidate feet-level y is picked within +-this many blocks of the player's feet. */
+  hostileCaveSearchRange: 12,
+  /** Cave spawn search: scan at most this many cells downward from the candidate y for a floor. */
+  hostileCaveScanDepth: 8,
+  /** Daylight factor (0..1) at or above which exposed hostile mobs start to despawn. */
+  hostileDespawnDaylight: 0.7,
+  /** A hostile mob is "exposed" (may despawn in daylight) when the sky light at its cell is at least this. */
+  hostileDespawnSkyLight: 12,
+  /** Per-second chance an exposed hostile mob despawns while it is daylight. */
+  hostileDespawnChancePerSecond: 0.25,
+} as const;
+
+export const SHAMBLER_CONFIG = {
+  halfWidth: 0.3,
+  height: 1.8,
+  /** Wander speed (blocks/s). */
+  walkSpeed: 1,
+  idleDurationMin: 1.5,
+  idleDurationMax: 4,
+  wanderDurationMin: 2,
+  wanderDurationMax: 5,
+  /** Unused by the passive spawner (hostiles spawn via their own light-gated path); kept for the definition shape. */
+  spawnWeight: 0,
+  /** Max shamblers alive at once (also bounded by MOB_CONFIG.maxHostileMobs). */
+  maxPerArea: 8,
+  maxHealth: 20,
+  /** Hostile mobs never flee; these exist only to satisfy the shared definition shape. */
+  fleeSpeed: 0,
+  fleeDuration: 0,
+  /** No drops yet (no new items in this slice). */
+  drops: [] as readonly never[],
+  /** Speed (blocks/s) while chasing the player. */
+  chaseSpeed: 2,
+  /** Radians/s a chasing/attacking mob turns to face the player (faster than wander turning). */
+  chaseTurnSpeed: 8,
+  /** Damage (health points, half-hearts) dealt per successful attack. */
+  attackDamage: 3,
+  /** Max HORIZONTAL centre-to-centre distance (blocks) between mob and player at which the mob can attack. */
+  attackReach: 1.2,
+  /** Max |player feet y - mob feet y| (blocks) at which the mob can attack. */
+  attackVerticalReach: 1.5,
+  /** Seconds between two attacks. */
+  attackCooldown: 1,
+  /** Seconds of wind-up after first getting into reach before the first strike. */
+  attackWindup: 0.5,
+  /** Idle/wander mobs start chasing a living player within this horizontal distance (blocks). */
+  detectionRange: 16,
+  /** A chasing mob gives up beyond this horizontal distance (blocks). */
+  loseTargetRange: 24,
 } as const;
 
 export const PIG_CONFIG = {
