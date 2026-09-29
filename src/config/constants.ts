@@ -497,6 +497,16 @@ export const ITEM_DROP_CONFIG = {
 } as const;
 
 /** F3 debug overlay / profiling (measure-only; no gameplay effect). */
+/** Chunk streaming budgets (see ChunkManager). */
+export const CHUNK_STREAMING_CONFIG = {
+  /** Generated chunks accepted per ChunkManager.update (edits + light + mesh run on the main thread). */
+  maxAcceptsPerUpdate: 4,
+  /** Outstanding generation requests; bounds cancelled work and result latency. */
+  maxInFlight: 8,
+  /** Chebyshev radius (chunks) generated synchronously around the start / respawn point before play. */
+  warmUpRadius: 1,
+} as const;
+
 export const DEBUG_CONFIG = {
   /** Frames kept in the rolling FPS / frame-time window. */
   frameWindow: 120,
