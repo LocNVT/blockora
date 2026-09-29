@@ -436,6 +436,16 @@ async function bootstrap(): Promise<void> {
   }
   deathScreen.onRespawn(respawn);
 
+  // Compile every visible material (chunks, sky, lights) and the block
+  // outline before the first frame, so the shader/pipeline stalls happen
+  // during startup rather than in-game (e.g. on the first targeted block).
+  // Only a warm-up: a failure must not stop the game from starting.
+  try {
+    await blockOutline.precompile(() => renderer.compileAsync(scene, camera));
+  } catch (error) {
+    console.warn('[renderer] material precompile failed; shaders will compile on first use.', error);
+  }
+
   renderer.setAnimationLoop((timestamp) => {
     perfStats.markFrame();
     timer.update(timestamp);

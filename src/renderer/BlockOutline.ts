@@ -40,6 +40,22 @@ export class BlockOutline {
     this.lines.visible = true;
   }
 
+  /**
+   * Runs `compile` (e.g. `renderer.compileAsync`) with the outline shown, so
+   * its line material is compiled before gameplay instead of on the first
+   * frame a block is targeted (renderers skip invisible objects). Visibility
+   * is restored afterwards.
+   */
+  async precompile(compile: () => Promise<void>): Promise<void> {
+    const wasVisible = this.lines.visible;
+    this.lines.visible = true;
+    try {
+      await compile();
+    } finally {
+      this.lines.visible = wasVisible;
+    }
+  }
+
   dispose(): void {
     this.scene.remove(this.lines);
     this.geometry.dispose();
