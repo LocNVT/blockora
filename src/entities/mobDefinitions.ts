@@ -1,4 +1,5 @@
 import { PIG_CONFIG } from '../config/constants';
+import type { ItemId } from '../items/items';
 
 /** Mob type ids. Append-only if ever persisted (not saved yet — Phase 5 slice). */
 export const MobType = {
@@ -6,6 +7,13 @@ export const MobType = {
 } as const;
 
 export type MobType = (typeof MobType)[keyof typeof MobType];
+
+/** A single item-drop entry: on death, drops a random count in [min, max] (inclusive) of `itemId`. */
+export interface MobDropDefinition {
+  readonly itemId: ItemId;
+  readonly min: number;
+  readonly max: number;
+}
 
 /** Data-driven per-mob-type tuning; no magic numbers in AI/physics/spawning code. */
 export interface MobDefinition {
@@ -24,6 +32,14 @@ export interface MobDefinition {
   readonly spawnWeight: number;
   /** Max simultaneous mobs of this type allowed within the despawn radius. */
   readonly maxPerArea: number;
+  /** Hit points; see `damageMob`. */
+  readonly maxHealth: number;
+  /** Speed (blocks/s) while fleeing an attacker (AI state 'flee'). */
+  readonly fleeSpeed: number;
+  /** Seconds spent in the 'flee' AI state after being hurt. */
+  readonly fleeDuration: number;
+  /** Items spawned (via ItemDropSystem) at this mob's position on death. */
+  readonly drops: readonly MobDropDefinition[];
 }
 
 const PIG_DEFINITION: MobDefinition = {
@@ -38,6 +54,10 @@ const PIG_DEFINITION: MobDefinition = {
   wanderDurationMax: PIG_CONFIG.wanderDurationMax,
   spawnWeight: PIG_CONFIG.spawnWeight,
   maxPerArea: PIG_CONFIG.maxPerArea,
+  maxHealth: PIG_CONFIG.maxHealth,
+  fleeSpeed: PIG_CONFIG.fleeSpeed,
+  fleeDuration: PIG_CONFIG.fleeDuration,
+  drops: PIG_CONFIG.drops,
 };
 
 /** Every registered passive mob definition, indexed by MobType. */

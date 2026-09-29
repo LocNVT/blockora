@@ -34,6 +34,7 @@ export const ItemId = {
   StoneAxe: 23,
   StoneShovel: 24,
   Apple: 25,
+  RawPork: 26,
 } as const;
 
 export type ItemId = (typeof ItemId)[keyof typeof ItemId];
@@ -255,5 +256,12 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'apple',
     food: { hunger: 4 },
+  },
+  {
+    id: ItemId.RawPork,
+    name: 'raw_pork',
+    maxStackSize: INVENTORY_CONFIG.maxStackSize,
+    icon: 'raw_pork',
+    food: { hunger: 3 },
   },
 ];

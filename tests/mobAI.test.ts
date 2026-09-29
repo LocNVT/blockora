@@ -108,6 +108,69 @@ describe('updateMobAi: yaw turning', () => {
   });
 });
 
+describe('updateMobAi: flee state', () => {
+  it('stays in flee (moving, via yaw held toward targetYaw) while its timer has not elapsed', () => {
+    const store = new EntityStore();
+    const mob = store.spawn(MobType.Pig, { x: 0, y: 0, z: 0 });
+    mob.ai.state = 'flee';
+    mob.ai.timer = 2;
+    mob.ai.targetYaw = Math.PI;
+    mob.yaw = 0;
+    const rng = scriptedRng([0.5]); // jitter roll of 0 (midpoint of scripted range -> no net jitter direction bias tested elsewhere)
+
+    updateMobAi(mob, def, 0.1, rng);
+
+    expect(mob.ai.state).toBe('flee');
+    expect(mob.ai.timer).toBeCloseTo(1.9, 5);
+    // Yaw moved toward the target (away direction), same turn-speed bound as wander.
+    expect(Math.abs(mob.yaw)).toBeGreaterThan(0);
+  });
+
+  it('returns to idle once the flee timer elapses', () => {
+    const store = new EntityStore();
+    const mob = store.spawn(MobType.Pig, { x: 0, y: 0, z: 0 });
+    mob.ai.state = 'flee';
+    mob.ai.timer = 0.05;
+    const rng = scriptedRng([0.5]);
+
+    updateMobAi(mob, def, 0.1, rng);
+
+    expect(mob.ai.state).toBe('idle');
+    expect(mob.ai.timer).toBeGreaterThan(0);
+  });
+
+  it('jitters targetYaw each tick using the injected rng (deterministic)', () => {
+    const store = new EntityStore();
+    const mob = store.spawn(MobType.Pig, { x: 0, y: 0, z: 0 });
+    mob.ai.state = 'flee';
+    mob.ai.timer = 5;
+    mob.ai.targetYaw = 0;
+    const rng = scriptedRng([1]); // max jitter roll each call
+
+    const before = mob.ai.targetYaw;
+    updateMobAi(mob, def, 0.1, rng);
+
+    expect(mob.ai.targetYaw).not.toBe(before);
+  });
+
+  it('same rng sequence produces identical flee trajectory (determinism)', () => {
+    function run(): unknown {
+      const store = new EntityStore();
+      const mob = store.spawn(MobType.Pig, { x: 0, y: 0, z: 0 });
+      mob.ai.state = 'flee';
+      mob.ai.timer = 3;
+      mob.ai.targetYaw = Math.PI / 2;
+      const rng = scriptedRng([0.2, 0.8, 0.4, 0.6]);
+      for (let i = 0; i < 20; i += 1) {
+        updateMobAi(mob, def, 0.1, rng);
+      }
+      return { yaw: mob.yaw, ai: mob.ai };
+    }
+
+    expect(run()).toEqual(run());
+  });
+});
+
 describe('updateMobAi: determinism', () => {
   it('same rng sequence produces identical resulting ai state', () => {
     function run(): unknown {

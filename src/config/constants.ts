@@ -293,6 +293,48 @@ export const PIG_CONFIG = {
   spawnWeight: 1,
   /** Max pigs allowed per despawn-radius area (kept simple: a flat per-type share of maxPassiveMobs). */
   maxPerArea: 8,
+  /** Hit points; killed when damage brings this to 0 (see `damageMob`). */
+  maxHealth: 10,
+  /** Speed (blocks/s) while fleeing an attacker; faster than the normal wander walkSpeed. */
+  fleeSpeed: 2.4,
+  /** Seconds spent in the 'flee' AI state after being hurt. */
+  fleeDuration: 3,
+  /** Item drops on death: `count` is rolled uniformly in [min, max] (inclusive) per entry, using the mob's own seeded RNG. */
+  drops: [{ itemId: 26 /* ItemId.RawPork, kept numeric to avoid an import cycle */, min: 1, max: 3 }],
+} as const;
+
+export const COMBAT_CONFIG = {
+  /** Damage dealt by an empty-hand melee attack. */
+  handDamage: 1,
+  /**
+   * Extra damage added to `handDamage` when attacking with a tool, keyed by
+   * ToolType. A tool with no entry (or an unrecognised type) adds 0. Kept as
+   * a flat table (no tier scaling yet) — see docs/PROGRESS.md for future work.
+   */
+  toolDamageBonus: {
+    axe: 2,
+    pickaxe: 1,
+    shovel: 0,
+  } as const,
+  /** Seconds a player must wait between two melee attacks. */
+  attackCooldown: 0.4,
+  /**
+   * Melee attack range (blocks). Equal to PLAYER_CONFIG.interactionDistance
+   * so attack range matches the existing block-interaction reach exactly
+   * (kept as its own constant so combat tuning doesn't accidentally move
+   * block-break/place range too).
+   */
+  attackReach: 6,
+  /** Horizontal speed (blocks/s) imparted to a mob's velocity on hit, directed away from the attacker. */
+  knockbackHorizontalSpeed: 4,
+  /** Vertical (upward) speed (blocks/s) imparted to a mob's velocity on hit. */
+  knockbackVerticalSpeed: 3,
+  /** Seconds of damage immunity granted to a mob after being hit. */
+  hurtInvulnerability: 0.5,
+  /** Seconds the hurt-flash render tint is shown after being hit (independent of, and no longer than, hurtInvulnerability). */
+  hurtFlashDuration: 0.25,
+  /** Max random yaw jitter (radians) added each flee-state tick so several hurt mobs don't all flee in lockstep. */
+  fleeYawJitter: 0.6,
 } as const;
 
 export const ITEM_DROP_CONFIG = {

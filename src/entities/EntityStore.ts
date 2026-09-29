@@ -1,4 +1,5 @@
 import type { MobType } from './mobDefinitions';
+import { mobDefinition } from './mobDefinitions';
 
 /** Plain 3D vector (no Three.js dependency in simulation code). */
 export interface Vec3 {
@@ -7,14 +8,14 @@ export interface Vec3 {
   z: number;
 }
 
-export type AiState = 'idle' | 'wander';
+export type AiState = 'idle' | 'wander' | 'flee';
 
 /** Small AI scratch state, mutated in place by mobAI.ts. */
 export interface MobAiState {
   state: AiState;
   /** Seconds remaining in the current state. */
   timer: number;
-  /** Yaw (radians) the mob is turning toward while wandering. */
+  /** Yaw (radians) the mob is turning toward while wandering/fleeing. */
   targetYaw: number;
 }
 
@@ -29,6 +30,14 @@ export interface MobEntity {
   readonly ai: MobAiState;
   /** Seconds this mob has existed; not currently used for despawn, but kept for future tuning/debug. */
   age: number;
+  /** Current hit points; mob is killed (removed + drops spawned) when this reaches 0. See `damageMob`. */
+  health: number;
+  /** Seconds remaining of post-hit damage immunity (see COMBAT_CONFIG.hurtInvulnerability). */
+  hurtTimer: number;
+  /** Seconds remaining the hurt-flash render tint should show (see COMBAT_CONFIG.hurtFlashDuration). */
+  hurtFlashTimer: number;
+  /** True from a hit until the mob lands again: physics keeps the knockback velocity instead of steering (see `damageMob`). */
+  knockedBack: boolean;
 }
 
 /**
@@ -53,6 +62,10 @@ export class EntityStore {
       onGround: false,
       ai: { state: 'idle', timer: 0, targetYaw: initialYaw },
       age: 0,
+      health: mobDefinition(type).maxHealth,
+      hurtTimer: 0,
+      hurtFlashTimer: 0,
+      knockedBack: false,
     };
     this.nextId += 1;
     this.indexById.set(entity.id, this.entities.length);

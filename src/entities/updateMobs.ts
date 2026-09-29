@@ -42,6 +42,12 @@ export function updateMobs(store: EntityStore, dt: number, timer: MobSpawnTimer,
     updateMobAi(mob, def, clampedDt, deps.rng);
     updateMobPhysics(mob, def, clampedDt, deps.isSolid, deps.isFluid);
     mob.age += clampedDt;
+    if (mob.hurtTimer > 0) {
+      mob.hurtTimer = Math.max(0, mob.hurtTimer - clampedDt);
+    }
+    if (mob.hurtFlashTimer > 0) {
+      mob.hurtFlashTimer = Math.max(0, mob.hurtFlashTimer - clampedDt);
+    }
   }
 
   timer.secondsUntilNextWave -= clampedDt;

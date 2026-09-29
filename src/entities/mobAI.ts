@@ -1,6 +1,6 @@
 import type { MobEntity } from './EntityStore';
 import type { MobDefinition } from './mobDefinitions';
-import { MOB_CONFIG } from '../config/constants';
+import { MOB_CONFIG, COMBAT_CONFIG } from '../config/constants';
 
 /** Injected seeded RNG: `() => number` in [0, 1), same shape as Math.random. Deterministic given a fixed sequence. */
 export type Rng = () => number;
@@ -34,17 +34,25 @@ function turnTowardTarget(mob: MobEntity, dt: number): void {
 }
 
 /**
- * Advances one mob's Idle <-> Wander state machine by `dt` seconds using the
- * injected `rng`. Idle picks a random duration and waits; Wander picks a
- * random target yaw and a random duration, and smoothly turns `mob.yaw`
- * toward it every tick (actual movement happens in mobPhysics.ts, which
- * reads `mob.yaw`). Deterministic given the same rng call sequence.
+ * Advances one mob's Idle <-> Wander <-> Flee state machine by `dt` seconds
+ * using the injected `rng`. Idle picks a random duration and waits; Wander
+ * picks a random target yaw and a random duration, and smoothly turns
+ * `mob.yaw` toward it every tick (actual movement happens in mobPhysics.ts,
+ * which reads `mob.yaw` and `mob.ai.state`). Flee is entered externally (see
+ * `damageMob`) with `targetYaw` already pointing away from the attacker; each
+ * tick here re-jitters that target slightly (COMBAT_CONFIG.fleeYawJitter) so
+ * several hurt mobs don't flee in lockstep, and turns toward it the same way
+ * wander does; once its timer elapses it returns to idle. Deterministic given
+ * the same rng call sequence.
  */
 export function updateMobAi(mob: MobEntity, def: MobDefinition, dt: number, rng: Rng): void {
   mob.ai.timer -= dt;
 
   if (mob.ai.timer > 0) {
     if (mob.ai.state === 'wander') {
+      turnTowardTarget(mob, dt);
+    } else if (mob.ai.state === 'flee') {
+      mob.ai.targetYaw += randomRange(rng, -COMBAT_CONFIG.fleeYawJitter, COMBAT_CONFIG.fleeYawJitter) * dt;
       turnTowardTarget(mob, dt);
     }
     return;
@@ -55,6 +63,7 @@ export function updateMobAi(mob: MobEntity, def: MobDefinition, dt: number, rng:
     mob.ai.timer = randomRange(rng, def.wanderDurationMin, def.wanderDurationMax);
     mob.ai.targetYaw = randomRange(rng, -Math.PI, Math.PI);
   } else {
+    // Both 'wander' and 'flee' return to idle once their timer elapses.
     mob.ai.state = 'idle';
     mob.ai.timer = randomRange(rng, def.idleDurationMin, def.idleDurationMax);
   }

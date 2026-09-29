@@ -27,6 +27,8 @@ const HOTBAR_DIGIT_CODES: readonly string[] = [
 export interface BlockActions {
   placePressed: boolean;
   dropPressed: boolean;
+  /** True on the single frame LMB transitioned from up to down (the "attack" edge); see `isBreakHeld()` for the hold state. */
+  attackPressed: boolean;
 }
 
 /** Pending hotbar selection/scroll input consumed once per frame via `consumeHotbarInput()`. */
@@ -63,6 +65,7 @@ export class InputController {
   private useHeld = false;
   private pendingPlace = false;
   private pendingDrop = false;
+  private pendingAttack = false;
   private pendingHotbarSelect: number | null = null;
   private pendingHotbarScroll = 0;
   private pendingToggleInventory = false;
@@ -143,6 +146,10 @@ export class InputController {
       return;
     }
     if (event.button === MOUSE_BUTTON_BREAK) {
+      if (!this.breakHeld) {
+        // Edge of the hold (not a repeat while already held) — one attack per press.
+        this.pendingAttack = true;
+      }
       this.breakHeld = true;
     } else if (event.button === MOUSE_BUTTON_PLACE) {
       this.pendingPlace = true;
@@ -179,6 +186,7 @@ export class InputController {
     this.useHeld = false;
     this.pendingPlace = false;
     this.pendingDrop = false;
+    this.pendingAttack = false;
     this.pendingHotbarSelect = null;
     this.pendingHotbarScroll = 0;
   };
@@ -266,9 +274,11 @@ export class InputController {
     const actions: BlockActions = {
       placePressed: this.pendingPlace,
       dropPressed: this.pendingDrop,
+      attackPressed: this.pendingAttack,
     };
     this.pendingPlace = false;
     this.pendingDrop = false;
+    this.pendingAttack = false;
     return actions;
   }
 

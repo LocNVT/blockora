@@ -35,6 +35,7 @@ export const TILE_NAMES = [
   'stone_axe',
   'stone_shovel',
   'apple',
+  'raw_pork',
 ] as const;
 
 export type TileName = (typeof TILE_NAMES)[number];

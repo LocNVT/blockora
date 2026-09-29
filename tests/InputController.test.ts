@@ -58,13 +58,15 @@ describe('InputController: break/place latches', () => {
     controller.dispose();
   });
 
-  it('LMB down sets isBreakHeld true; mouseup clears it', () => {
+  it('LMB down sets isBreakHeld true and latches attackPressed once (the press edge)', () => {
     expect(controller.isBreakHeld()).toBe(false);
     doc.dispatchEvent(mouseDownEvent(0));
     expect(controller.isBreakHeld()).toBe(true);
-    // Break is a hold (isBreakHeld), so LMB never produces a consumeActions latch.
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    // Break is a hold (isBreakHeld); attackPressed is the separate one-shot edge latch.
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: true });
     expect(controller.isBreakHeld()).toBe(true);
+    // Latch already consumed; still held, no repeat.
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
 
     doc.dispatchEvent(mouseUpEvent(0));
     expect(controller.isBreakHeld()).toBe(false);
@@ -72,8 +74,8 @@ describe('InputController: break/place latches', () => {
 
   it('one RMB press sets placePressed true once', () => {
     doc.dispatchEvent(mouseDownEvent(2));
-    expect(controller.consumeActions()).toEqual({ placePressed: true, dropPressed: false });
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: true, dropPressed: false, attackPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('RMB down sets isUseHeld true; mouseup clears it', () => {
@@ -86,7 +88,7 @@ describe('InputController: break/place latches', () => {
 
   it('isUseHeld is independent of the one-shot placePressed latch', () => {
     doc.dispatchEvent(mouseDownEvent(2));
-    expect(controller.consumeActions()).toEqual({ placePressed: true, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: true, dropPressed: false, attackPressed: false });
     // Latch consumed, but the button is still physically held.
     expect(controller.isUseHeld()).toBe(true);
   });
@@ -122,7 +124,7 @@ describe('InputController: break/place latches', () => {
 
     doc.dispatchEvent(mouseDownEvent(0));
     expect(controller.isBreakHeld()).toBe(false);
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('the click that acquires pointer lock does not itself hold break', () => {
@@ -135,7 +137,7 @@ describe('InputController: break/place latches', () => {
     // in a real browser too; simulate it firing while still unlocked.
     doc.dispatchEvent(mouseDownEvent(0));
     expect(controller.isBreakHeld()).toBe(false);
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('isBreakHeld is cleared on unlock', () => {
@@ -162,21 +164,21 @@ describe('InputController: break/place latches', () => {
   it('dispose removes listeners: no action recorded after dispose', () => {
     controller.dispose();
     doc.dispatchEvent(mouseDownEvent(0));
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('one KeyQ press sets dropPressed true once, then false on next consume', () => {
     doc.dispatchEvent(keyDownEvent('KeyQ'));
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: true });
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: true, attackPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('holding KeyQ (repeated keydown without keyup) does not repeat the drop action', () => {
     doc.dispatchEvent(keyDownEvent('KeyQ'));
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: true });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: true, attackPressed: false });
     // Simulate browser key-repeat: another keydown for the same code, no keyup between.
     doc.dispatchEvent(keyDownEvent('KeyQ'));
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('KeyQ is ignored while unlocked', () => {
@@ -185,7 +187,7 @@ describe('InputController: break/place latches', () => {
     expect(controller.isLocked()).toBe(false);
 
     doc.dispatchEvent(keyDownEvent('KeyQ'));
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 
   it('pending drop is cleared on unlock', () => {
@@ -193,7 +195,47 @@ describe('InputController: break/place latches', () => {
     doc.pointerLockElement = null;
     doc.dispatchEvent(new Event('pointerlockchange'));
 
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
+  });
+
+  it('holding LMB (mousedown while already breakHeld, no mouseup between) does not repeat attackPressed', () => {
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: true });
+    // A second mousedown without an intervening mouseup (shouldn't normally
+    // happen for a real mouse, but guards the edge-detection logic).
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
+  });
+
+  it('releasing and re-pressing LMB latches attackPressed again', () => {
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: true });
+    doc.dispatchEvent(mouseUpEvent(0));
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: true });
+  });
+
+  it('LMB while NOT locked does not set attackPressed', () => {
+    doc.pointerLockElement = null;
+    doc.dispatchEvent(new Event('pointerlockchange'));
+    expect(controller.isLocked()).toBe(false);
+
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
+  });
+
+  it('pending attackPressed is cleared on unlock', () => {
+    doc.dispatchEvent(mouseDownEvent(0));
+    doc.pointerLockElement = null;
+    doc.dispatchEvent(new Event('pointerlockchange'));
+
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
+  });
+
+  it('dispose removes listeners: no attackPressed recorded after dispose', () => {
+    controller.dispose();
+    doc.dispatchEvent(mouseDownEvent(0));
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
   });
 });
 
@@ -338,7 +380,7 @@ describe('InputController: inventory toggle/close (UI input)', () => {
     doc.dispatchEvent(keyDownEvent('Digit3'));
 
     expect(controller.sample().forward).toBe(0);
-    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false });
+    expect(controller.consumeActions()).toEqual({ placePressed: false, dropPressed: false, attackPressed: false });
     expect(controller.consumeHotbarInput()).toEqual({ select: null, scroll: 0 });
   });
 
