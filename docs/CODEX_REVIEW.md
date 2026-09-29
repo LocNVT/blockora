@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (Codex sandbox was read-only). Reviewed commit 0c02e93._
+_Written by Claude from Codex's verbatim output (Codex sandbox was read-only). Reviewed commit 3d1066d._
 
 Status: PASS_WITH_NOTES
 
 Task:  
-Phase 5 entity system + passive pig
+Phase 5 mob combat + knockback + pig drops
 
 Summary:  
-The commit adds a plain-data entity store, passive pig AI and voxel physics, spawn/despawn rules, and instanced rendering. No concrete critical or important defect was found in the reviewed implementation.
+Reviewed commit `3d1066d`. The combat, entity raycast, knockback, flee behavior, and pig drops are coherently integrated. No concrete critical or important issues found.
 
 Critical:
 - None
@@ -17,37 +17,41 @@ Important:
 - None
 
 Minor:
-- `mobAI` and `mobPhysics` assume nonnegative, finite `dt`; the production `updateMobs` path clamps the frame delta.
-- `MobRenderer.update` allocates a filtered array and a `Set` each frame. The current passive-mob cap of 12 keeps this bounded; profile before raising the cap.
+- `MobRenderer.update` allocates a filtered array and a `Set` each frame. The current mob cap keeps this bounded; profile before increasing it.
+- `docs/ROADMAP.md` marks some Phase 5 work complete while `docs/PROGRESS.md` still has the Phase 5 checklist unchecked. The current task and latest completed work are documented.
 
 Required fixes:
 - None
 
 Tests:
-- New tests cover entity storage and removal, AI transitions and turning, collision and hazards, spawning and despawning, and deterministic sequences. `git diff --check HEAD^ HEAD` passes. Tests and build were not run during this review.
+- Added tests cover combat damage, drops, raycast selection, input edges, flee behavior, and knockback. Tests and build were not run during this review.
 
 Architecture:
-- Simulation data and systems are separated from Three.js rendering, and collision reuses the shared voxel AABB core. The committed `PROGRESS.md` records the implemented slice. The separate uncommitted `CLAUDE.md` edit was excluded.
+- Combat actions, simulation, and rendering remain separated. The committed progress notes describe the completed slice. The uncommitted `CLAUDE.md` edit was ignored.
 
 Performance:
-- Instanced meshes keep draw calls fixed across the current pig population, with explicit renderer disposal. Spawn checks are bounded to four attempts per five-second wave, and the mob population is capped.
+- Entity raycast iterates live mobs directly and supports a reusable hit object. Rendering uses instanced meshes and disposes its geometry, material, and meshes.
 
 Reviewed files:
-- `src/config/constants.ts`
-- `src/entities/EntityStore.ts`
-- `src/entities/mobAI.ts`
-- `src/entities/mobDefinitions.ts`
-- `src/entities/mobPhysics.ts`
-- `src/entities/mobSpawning.ts`
-- `src/entities/updateMobs.ts`
-- `src/main.ts`
-- `src/renderer/MobRenderer.ts`
-- `tests/EntityStore.test.ts`
-- `tests/mobAI.test.ts`
-- `tests/mobPhysics.test.ts`
-- `tests/mobSpawning.test.ts`
+- `CLAUDE.md` (review instructions only; ignored uncommitted edit)
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
+- `src/config/constants.ts`
+- `src/entities/EntityStore.ts`
+- `src/entities/entityRaycast.ts`
+- `src/entities/mobAI.ts`
+- `src/entities/mobCombat.ts`
+- `src/entities/mobDefinitions.ts`
+- `src/entities/mobPhysics.ts`
+- `src/entities/updateMobs.ts`
+- `src/gameplay/combatActions.ts`
+- `src/items/items.ts`
+- `src/main.ts`
+- `src/player/InputController.ts`
+- `src/renderer/MobRenderer.ts`
+- `src/world/texture/tileArt.ts`
+- `src/world/texture/tiles.ts`
+- Related combat, raycast, input, AI, and physics tests
 
 Recommendation:  
 Continue
