@@ -32,6 +32,8 @@ export interface ChunkStreamingStats {
   /** Requests sent to the generation service and not yet accepted. */
   readonly inFlight: number;
   readonly generation: GenerationLocation;
+  /** Chunks currently meshed (visible) by this manager; <= loaded chunks (the outer ring is loaded, not meshed). */
+  readonly meshed: number;
 }
 
 export interface ChunkStreamingOptions {
@@ -39,6 +41,19 @@ export interface ChunkStreamingOptions {
   readonly service?: ChunkGenerationService;
   /** Cap on outstanding requests. Default: max(CHUNK_STREAMING_CONFIG.maxInFlight, maxLoadsPerUpdate). */
   readonly maxInFlight?: number;
+  /**
+   * Main-thread time budget (ms) per `update` for accepting results and
+   * meshing, read from the probe's clock. At least one accept and one mesh
+   * still happen per update (when available) so streaming cannot starve.
+   * Default: Infinity (count caps only); the game passes CHUNK_STREAMING_CONFIG.frameBudgetMs.
+   */
+  readonly frameBudgetMs?: number;
+  /**
+   * Extra chunk rings loaded, lit and kept beyond the rendered `radius` but
+   * never meshed. Chunks unload beyond `radius + outerRing`. Default 0; the
+   * game passes CHUNK_STREAMING_CONFIG.outerRing.
+   */
+  readonly outerRing?: number;
 }
 
 interface InFlightRequest {
@@ -111,14 +126,26 @@ const DIAGONALS: readonly (readonly [number, number])[] = [
  * - An accepted chunk gets the player's `BlockEditStore` diff applied, is
  *   stored, lit (LightEngine.lightChunk), then meshed — as before.
  *
+ * Rendered vs loaded radius: `radius` is the rendered (meshed) radius. With
+ * `outerRing` = k, chunks out to `radius + k` are generated and lit but never
+ * meshed, and unload only beyond `radius + k` (no other hysteresis). Moving
+ * the center by one chunk therefore only *meshes* the newly visible row
+ * (its neighbours already exist) and *removes the mesh* of the row that left
+ * the rendered radius; nothing is remeshed for a missing neighbour.
+ *
  * Complete-neighbourhood meshing: a chunk is meshed only once every chunk of
  * its 3x3 neighbourhood (4 axis + 4 diagonal; see DIAGONALS for why the
- * diagonals matter) is loaded or outside the desired radius (the world edge
+ * diagonals matter) is loaded or outside the loaded area (the world edge
  * counts as complete), so streaming meshes each chunk ~once instead of once
  * per arriving neighbour. A meshed chunk is remeshed when an axis neighbour
- * it was meshed without arrives (e.g. the old world edge after the center
- * moves), or when its light changes. Block edits remesh through blockEdit /
- * remeshChunks directly and are unaffected.
+ * it was meshed without arrives (only possible with outerRing 0), or when
+ * its light changes. Block edits remesh through blockEdit / remeshChunks
+ * directly and are unaffected.
+ *
+ * Time budget (`frameBudgetMs`): `update` accepts results one at a time and
+ * meshes candidates nearest-first, stopping each phase once the budget since
+ * the start of `update` is spent, but always doing >= 1 accept and >= 1 mesh
+ * when available. Unmeshed candidates carry over to the next `update`.
  *
  * `warmUp` / `loadAllPending` generate synchronously on the calling thread
  * (spawn / respawn / tests) with `generator`.
@@ -129,6 +156,9 @@ export class ChunkManager {
   private readonly registry: BlockRegistry;
   private readonly sink: ChunkMeshSink;
   private readonly radius: number;
+  /** radius + outerRing: chunks generated, lit and kept loaded. */
+  private readonly loadRadius: number;
+  private readonly frameBudgetMs: number;
   private readonly maxLoadsPerUpdate: number;
   private readonly maxInFlight: number;
   private readonly meshBuffers = new MeshBuffers();
@@ -142,7 +172,10 @@ export class ChunkManager {
   private lightMs = 0;
 
   private lastCenter: ChunkCoord | null = null;
+  /** Chunks to keep loaded (within loadRadius). */
   private desiredKeys: ReadonlySet<string> = new Set();
+  /** Chunks to mesh (within radius). */
+  private renderKeys: ReadonlySet<string> = new Set();
   /** Desired, not loaded, not yet requested; nearest-first. */
   private pendingLoads: ChunkCoord[] = [];
   private readonly inFlight = new Map<string, InFlightRequest>();
@@ -169,6 +202,8 @@ export class ChunkManager {
     this.registry = registry;
     this.sink = sink;
     this.radius = radius;
+    this.loadRadius = radius + Math.max(0, Math.floor(streaming.outerRing ?? 0));
+    this.frameBudgetMs = streaming.frameBudgetMs ?? Number.POSITIVE_INFINITY;
     this.maxLoadsPerUpdate = maxLoadsPerUpdate;
     this.maxInFlight = Math.max(1, streaming.maxInFlight ?? Math.max(CHUNK_STREAMING_CONFIG.maxInFlight, maxLoadsPerUpdate));
     this.light = light;
@@ -187,20 +222,22 @@ export class ChunkManager {
   }
 
   get streaming(): ChunkStreamingStats {
-    return { pending: this.pendingLoads.length, inFlight: this.inFlight.size, generation: this.service.location };
+    return { pending: this.pendingLoads.length, inFlight: this.inFlight.size, generation: this.service.location, meshed: this.meshedWith.size };
   }
 
   /**
    * Re-evaluates the desired area when `center` changed, then requests
    * pending chunks (bounded by `maxInFlight`), accepts up to
-   * `maxLoadsPerUpdate` generated chunks and meshes what became meshable.
+   * `maxLoadsPerUpdate` generated chunks and meshes what became meshable,
+   * nearest-first, within the time budget (>= 1 accept and >= 1 mesh).
    */
   update(center: ChunkCoord): void {
+    const deadline = this.now() + this.frameBudgetMs;
     this.setCenter(center);
     this.requestPending();
-    this.acceptGenerated();
+    this.acceptGenerated(deadline);
     this.requestPending();
-    this.flushMeshes();
+    this.flushMeshes(deadline);
   }
 
   /**
@@ -215,7 +252,7 @@ export class ChunkManager {
     for (const coord of chunksWithinRadius(center, Math.min(radius, this.radius))) {
       this.loadNow(coord);
     }
-    this.flushMeshes();
+    this.flushMeshes(Number.POSITIVE_INFINITY);
     this.requestPending();
   }
 
@@ -228,11 +265,11 @@ export class ChunkManager {
     if (this.lastCenter === null) {
       return;
     }
-    for (const coord of chunksWithinRadius(this.lastCenter, this.radius)) {
+    for (const coord of chunksWithinRadius(this.lastCenter, this.loadRadius)) {
       this.loadNow(coord);
     }
     this.pendingLoads = [];
-    this.flushMeshes();
+    this.flushMeshes(Number.POSITIVE_INFINITY);
   }
 
   /** Cancels outstanding requests and disposes the generation service. */
@@ -251,22 +288,46 @@ export class ChunkManager {
     }
     this.lastCenter = center;
 
-    const desired = chunksWithinRadius(center, this.radius);
+    const previousRender = this.renderKeys;
+    const desired = chunksWithinRadius(center, this.loadRadius);
     this.desiredKeys = new Set(desired.map(({ cx, cz }) => chunkKey(cx, cz)));
+    this.renderKeys = new Set(
+      chunksWithinRadius(center, this.radius).map(({ cx, cz }) => chunkKey(cx, cz)),
+    );
     this.unloadOutOfRange();
     this.cancelUndesiredRequests();
     this.pendingLoads = desired.filter(
       ({ cx, cz }) => !this.store.hasChunk(cx, cz) && !this.inFlight.has(chunkKey(cx, cz)),
     );
 
-    // The desired edge moved: a loaded chunk waiting for a neighbour that is
-    // no longer desired may have become meshable.
+    // Chunks that left the rendered radius but stay loaded (the outer ring):
+    // drop their mesh; they are simply not rendered any more.
+    for (const key of previousRender) {
+      if (this.renderKeys.has(key)) {
+        continue;
+      }
+      const chunk = this.chunkOfKey(key);
+      if (chunk !== undefined) {
+        this.sink.remove(chunk.cx, chunk.cz);
+        this.meshedWith.delete(key);
+        this.meshCandidates.delete(key);
+        this.lightChanged.delete(key);
+      }
+    }
+
+    // Newly visible chunks, and loaded chunks that were waiting for a
+    // neighbour that is no longer desired, may be meshable now.
     for (const chunk of this.store.chunks()) {
       const key = chunkKey(chunk.cx, chunk.cz);
-      if (!this.meshedWith.has(key)) {
+      if (this.renderKeys.has(key) && !this.meshedWith.has(key)) {
         this.meshCandidates.set(key, { cx: chunk.cx, cz: chunk.cz });
       }
     }
+  }
+
+  private chunkOfKey(key: string): ChunkCoord | undefined {
+    const [cx, cz] = key.split(',').map(Number);
+    return cx !== undefined && cz !== undefined && this.store.hasChunk(cx, cz) ? { cx, cz } : undefined;
   }
 
   private unloadOutOfRange(): void {
@@ -283,6 +344,7 @@ export class ChunkManager {
       this.store.removeChunk(cx, cz);
       this.meshedWith.delete(key);
       this.meshCandidates.delete(key);
+      this.lightChanged.delete(key);
     }
   }
 
@@ -314,11 +376,23 @@ export class ChunkManager {
     }
   }
 
-  private acceptGenerated(): void {
+  /**
+   * Accepts results one at a time (<= maxLoadsPerUpdate polled), stopping once
+   * `deadline` has passed -- but only after at least one chunk was inserted.
+   */
+  private acceptGenerated(deadline: number): void {
     if (this.inFlight.size === 0 || this.maxLoadsPerUpdate <= 0) {
       return;
     }
-    for (const result of this.service.poll(this.maxLoadsPerUpdate)) {
+    let inserted = 0;
+    for (let handled = 0; handled < this.maxLoadsPerUpdate; handled += 1) {
+      if (inserted > 0 && this.now() >= deadline) {
+        return;
+      }
+      const result = this.service.poll(1)[0];
+      if (result === undefined) {
+        return;
+      }
       const key = chunkKey(result.cx, result.cz);
       const request = this.inFlight.get(key);
       if (request === undefined || request.id !== result.id) {
@@ -329,6 +403,7 @@ export class ChunkManager {
         continue; // already present (e.g. created by a block edit): never double-insert
       }
       this.insertChunk(new Chunk(result.cx, result.cz, result.blocks), result.genMs);
+      inserted += 1;
     }
   }
 
@@ -366,13 +441,17 @@ export class ChunkManager {
       for (let dz = -1; dz <= 1; dz += 1) {
         const cx = coord.cx + dx;
         const cz = coord.cz + dz;
-        if (this.store.hasChunk(cx, cz)) {
-          this.meshCandidates.set(chunkKey(cx, cz), { cx, cz });
+        const key = chunkKey(cx, cz);
+        if (this.renderKeys.has(key) && this.store.hasChunk(cx, cz)) {
+          this.meshCandidates.set(key, { cx, cz });
         }
       }
     }
     for (const changed of lightChanged) {
       const key = chunkKey(changed.cx, changed.cz);
+      if (!this.renderKeys.has(key)) {
+        continue; // never meshed, nothing to refresh
+      }
       this.meshCandidates.set(key, changed);
       this.lightChanged.add(key);
     }
@@ -403,15 +482,21 @@ export class ChunkManager {
     return mask;
   }
 
-  /** Meshes candidates whose neighbourhood is complete and whose mesh is missing or out of date. */
-  private flushMeshes(): void {
+  /**
+   * Meshes candidates whose neighbourhood is complete and whose mesh is
+   * missing or out of date, nearest-first. Stops once `deadline` has passed
+   * (after >= 1 mesh); the rest stays a candidate for the next call.
+   */
+  private flushMeshes(deadline: number): void {
     if (this.meshCandidates.size === 0) {
       this.lightChanged.clear();
       return;
     }
-    const toMesh: ChunkCoord[] = [];
+    const ready: { readonly coord: ChunkCoord; readonly key: string; readonly mask: number; readonly dist: number }[] = [];
     for (const [key, coord] of this.meshCandidates) {
-      if (!this.store.hasChunk(coord.cx, coord.cz)) {
+      if (!this.store.hasChunk(coord.cx, coord.cz) || !this.renderKeys.has(key)) {
+        this.meshCandidates.delete(key);
+        this.lightChanged.delete(key);
         continue;
       }
       const mask = this.neighbourMask(coord);
@@ -419,21 +504,36 @@ export class ChunkManager {
       const outdated =
         previous === undefined || this.lightChanged.has(key) || (mask !== INCOMPLETE && (mask & ~previous) !== 0);
       if (!outdated) {
+        this.meshCandidates.delete(key);
+        this.lightChanged.delete(key);
         continue;
       }
       if (mask === INCOMPLETE) {
         // Mesh later, once the missing neighbour arrives (or leaves the desired area).
         this.meshedWith.delete(key);
+        this.meshCandidates.delete(key);
+        this.lightChanged.delete(key);
         continue;
       }
-      this.meshedWith.set(key, mask);
-      toMesh.push(coord);
+      ready.push({ coord, key, mask, dist: this.distanceToCenter(coord) });
     }
-    this.meshCandidates.clear();
-    this.lightChanged.clear();
+    ready.sort((a, b) => a.dist - b.dist);
 
-    if (toMesh.length > 0) {
-      remeshChunks(this.store, this.registry, this.sink, toMesh, this.meshBuffers, this.probe);
+    for (let i = 0; i < ready.length; i += 1) {
+      if (i > 0 && this.now() >= deadline) {
+        return; // the rest carries over (still in meshCandidates)
+      }
+      const { coord, key, mask } = ready[i] as (typeof ready)[number];
+      this.meshedWith.set(key, mask);
+      this.meshCandidates.delete(key);
+      this.lightChanged.delete(key);
+      remeshChunks(this.store, this.registry, this.sink, [coord], this.meshBuffers, this.probe);
     }
+  }
+
+  /** Squared chunk distance to the streaming center (nearest-first ordering). */
+  private distanceToCenter({ cx, cz }: ChunkCoord): number {
+    const center = this.lastCenter;
+    return center === null ? 0 : (cx - center.cx) ** 2 + (cz - center.cz) ** 2;
   }
 }

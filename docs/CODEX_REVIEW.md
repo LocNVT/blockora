@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1121 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1134 tests, lint and build pass. Minor note addressed with a one-line tidy-up (set was already self-clearing)._
 
 Status: PASS_WITH_NOTES
 
 Task:  
-Phase 8: worker chunk generation + complete-neighbourhood meshing
+Phase 8: time-based streaming budget + outer ring
 
 Summary:  
-Worker generation, cancellation and stale-result handling, spawn warm-up, and neighborhood-gated meshing are coherent. No blocking issues found.
+The new streaming budget and loaded outer ring are consistently applied. Tests cover progress under tight budgets, deferred meshing, and movement across the rendered boundary. No critical or important issues found.
 
 Critical:
 - None.
@@ -17,20 +17,19 @@ Important:
 - None.
 
 Minor:
-- Spawn and respawn warm-up intentionally generates a 3×3 area synchronously on the main thread. This is documented and measured, but remains a startup and respawn stall risk.
-- `ChunkManager.dispose()` is not called by the current application. This is recorded in Known Issues and is acceptable for the current page-lifetime app.
+- `unloadOutOfRange()` removes unloaded chunks from `meshCandidates` and `meshedWith`, but not `lightChanged`. If a chunk is unloaded while marked light-changed, its key can remain in that set. This is a small bookkeeping cleanup issue; no functional impact was found in the reviewed flow.
 
 Required fixes:
 - None.
 
 Tests:
-- Reviewed streaming tests for budgets, cancellation, stale results, warm-up, edit application, and neighborhood meshing. `PROGRESS.md` reports 68 files and 1121 tests passing; tests were not run during this review.
+- Reviewed `tests/ChunkManagerBudget.test.ts` and the existing streaming tests. `PROGRESS.md` reports 69 files and 1134 tests passing; tests were not run during this review.
 
 Architecture:
-- The worker protocol uses typed block buffers and transferable `ArrayBuffer`s. Worker failures reroute outstanding work to the in-process service. Edits are applied before lighting, and lighting precedes queued meshing. The separation is appropriate.
+- The separate loaded and rendered radii are handled coherently. Existing count limits remain in place, and the budgeted work carries over across updates.
 
 Performance:
-- Generation runs off the main thread where workers are supported. Result acceptance, lighting, and meshing remain on the main thread with a four-result-per-update cap. Remaining frame cost and synchronous warm-up are documented in `PROGRESS.md`.
+- Result acceptance and meshing honor the injected-clock deadline after making progress. The outer ring avoids remeshing newly visible chunks before their neighbors load. The documented startup stall remains outside this task’s scope.
 
 Reviewed files:
 - `CLAUDE.md`
@@ -40,15 +39,8 @@ Reviewed files:
 - `src/debug/debugText.ts`
 - `src/main.ts`
 - `src/world/ChunkManager.ts`
-- `src/world/WorldGenerator.ts`
-- `src/world/worker/ChunkGenerationService.ts`
-- `src/world/worker/WorkerChunkGenerationService.ts`
-- `src/world/worker/ChunkGenWorkerCore.ts`
-- `src/world/worker/chunkGenProtocol.ts`
-- `src/world/worker/chunkGen.worker.ts`
-- `src/world/worker/createChunkGenerationService.ts`
+- `tests/ChunkManagerBudget.test.ts`
 - `tests/ChunkManagerStreaming.test.ts`
-- `tests/debugText.test.ts`
 - Current git diff
 
 Recommendation:  

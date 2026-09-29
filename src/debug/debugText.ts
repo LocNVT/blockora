@@ -54,6 +54,7 @@ export interface DebugSnapshot {
     readonly pending: number;
     readonly inFlight: number;
     readonly generation: 'worker' | 'main';
+    readonly meshed?: number;
   };
   readonly mobCount: number;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
@@ -107,7 +108,8 @@ export function formatDebugLines(s: DebugSnapshot): string[] {
     lines.splice(
       9,
       0,
-      `Chunk queue  pending ${formatInt(q.pending)}  in-flight ${formatInt(q.inFlight)}  gen on ${q.generation}`,
+      `Chunk queue  pending ${formatInt(q.pending)}  in-flight ${formatInt(q.inFlight)}  gen on ${q.generation}` +
+        (q.meshed !== undefined ? `  meshed ${formatInt(q.meshed)}` : ''),
     );
   }
   return lines;
