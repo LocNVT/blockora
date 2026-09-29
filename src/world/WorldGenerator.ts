@@ -54,10 +54,12 @@ const STRUCTURE_QUERY_PADDING = TREE_MAX_HORIZONTAL_REACH * 2;
  * end up with half-cut trees in them (dungeons are buried below the soil and
  * leave trees alone).
  *
- * Runs on the main thread for now (Web Worker offload is Phase 8).
+ * Pure given the seed, so the same code runs on the main thread (warm-up,
+ * fallback) and in the generation worker (src/world/worker).
  */
 export class WorldGenerator {
-  private readonly seed: number;
+  /** World seed; public so a generation worker can build an identical generator. */
+  readonly seed: number;
   private readonly biomeSelector: BiomeSelector;
   private readonly treePlacer: TreePlacer;
   private readonly orePlacer: OrePlacer;

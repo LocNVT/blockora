@@ -49,6 +49,12 @@ export interface DebugSnapshot {
   readonly renderer: RendererStats;
   readonly jsHeapMb: number | null;
   readonly chunksLoaded: number;
+  /** Chunk streaming queue (optional; adds a line when present). */
+  readonly chunkStreaming?: {
+    readonly pending: number;
+    readonly inFlight: number;
+    readonly generation: 'worker' | 'main';
+  };
   readonly mobCount: number;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
   readonly chunk: { readonly cx: number; readonly cz: number };
@@ -81,7 +87,7 @@ function backendLabel(backend: string): string {
 export function formatDebugLines(s: DebugSnapshot): string[] {
   const p = s.perf;
   const heap = s.jsHeapMb === null ? NA : `${fixed(s.jsHeapMb, 1)} MB`;
-  return [
+  const lines = [
     `Blockora  [${backendLabel(s.backend)}]`,
     `FPS ${fixed(p.fps, 1)}`,
     `Frame ms  avg ${fixed(p.frameAvgMs, 1)}  p95 ${fixed(p.frameP95Ms, 1)}  max ${fixed(p.frameMaxMs, 1)}`,
@@ -95,4 +101,14 @@ export function formatDebugLines(s: DebugSnapshot): string[] {
     `Pos ${fixed(s.position.x, 1)} ${fixed(s.position.y, 1)} ${fixed(s.position.z, 1)}  chunk (${s.chunk.cx}, ${s.chunk.cz})`,
     `Render distance ${s.renderDistance} chunks`,
   ];
+  const q = s.chunkStreaming;
+  if (q !== undefined) {
+    // After the "Chunk ms" line: gen ms above is measured where generation runs.
+    lines.splice(
+      9,
+      0,
+      `Chunk queue  pending ${formatInt(q.pending)}  in-flight ${formatInt(q.inFlight)}  gen on ${q.generation}`,
+    );
+  }
+  return lines;
 }

@@ -31,6 +31,7 @@ import { GameTime, daylightFactor } from './world/GameTime';
 import { blockRegistry } from './world/BlockRegistry';
 import { ChunkStore } from './world/ChunkStore';
 import { ChunkManager } from './world/ChunkManager';
+import { createChunkGenerationService } from './world/worker/createChunkGenerationService';
 import { WorldGenerator } from './world/WorldGenerator';
 import { createSolidQuery } from './world/SolidQuery';
 import { createTargetQuery } from './world/TargetQuery';
@@ -210,15 +211,16 @@ async function bootstrap(): Promise<void> {
     lightEngine,
     blockEdits,
     perfStats,
+    { service: createChunkGenerationService(worldGenerator) },
   );
-  // Only force-load a small area synchronously so there's solid ground under
-  // the player before the first frame renders; the rest of renderDistance
-  // streams in over subsequent frames via the per-frame budgeted update()
-  // below, instead of stalling startup on the full render-distance area.
+  // Warm-up: synchronously generate the start chunk + its ring on the main
+  // thread so there's solid ground (and a resolvable spawn height) before the
+  // first frame; the rest of renderDistance streams in through the generation
+  // worker via the per-frame budgeted update() below.
   // A loaded world resumes at the saved position; respawn still uses `spawn`.
   const startPosition = saved?.player.position ?? spawn.position;
   const spawnChunkStart = perfStats.now();
-  chunkManager.update(worldToChunkCoord(startPosition.x, startPosition.z));
+  chunkManager.warmUp(worldToChunkCoord(startPosition.x, startPosition.z));
   const spawnLoadStats = chunkManager.stats;
   console.info(
     `[chunks] initial spawn load time=${(perfStats.now() - spawnChunkStart).toFixed(2)}ms ` +
@@ -410,7 +412,7 @@ async function bootstrap(): Promise<void> {
     survivalTicker.reset();
     fallTracker.reset();
 
-    chunkManager.update(worldToChunkCoord(spawn.position.x, spawn.position.z));
+    chunkManager.warmUp(worldToChunkCoord(spawn.position.x, spawn.position.z));
 
     playerState.position.x = spawn.position.x;
     playerState.position.y = resolveSpawnHeight(chunkStore, blockRegistry, spawn.position);
@@ -689,6 +691,7 @@ async function bootstrap(): Promise<void> {
       renderer: readRendererStats(renderer.info),
       jsHeapMb: readJsHeapMb(),
       chunksLoaded: chunkStore.size,
+      chunkStreaming: chunkManager.streaming,
       mobCount: entityStore.count(),
       position: playerState.position,
       chunk: worldToChunkCoord(playerState.position.x, playerState.position.z),

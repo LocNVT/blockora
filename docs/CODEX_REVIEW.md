@@ -1,47 +1,55 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1093 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1121 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
-Task: Phase 8 profiling (F3 overlay)
+Task:  
+Phase 8: worker chunk generation + complete-neighbourhood meshing
 
-Summary: The profiling overlay and timing hooks are integrated with bounded sample windows and focused tests. I found no concrete critical or important issues.
+Summary:  
+Worker generation, cancellation and stale-result handling, spawn warm-up, and neighborhood-gated meshing are coherent. No blocking issues found.
 
 Critical:
-- None
+- None.
 
 Important:
-- None
+- None.
 
 Minor:
-- `DebugOverlay` has a `dispose()` method, but the application does not call it. This is harmless for the current single-session lifecycle; consider calling it if teardown or restart support is added.
+- Spawn and respawn warm-up intentionally generates a 3×3 area synchronously on the main thread. This is documented and measured, but remains a startup and respawn stall risk.
+- `ChunkManager.dispose()` is not called by the current application. This is recorded in Known Issues and is acceptable for the current page-lifetime app.
 
 Required fixes:
-- None
+- None.
 
 Tests:
-- The added tests cover rolling statistics, formatting, F3 input, and instrumentation. `docs/PROGRESS.md` reports 66 files and 1093 tests passing; I did not rerun them.
+- Reviewed streaming tests for budgets, cancellation, stale results, warm-up, edit application, and neighborhood meshing. `PROGRESS.md` reports 68 files and 1121 tests passing; tests were not run during this review.
 
 Architecture:
-- The profiling code is separated into pure statistics/formatting modules and UI integration. Timing is injected through a narrow probe interface.
+- The worker protocol uses typed block buffers and transferable `ArrayBuffer`s. Worker failures reroute outstanding work to the in-process service. Edits are applied before lighting, and lighting precedes queued meshing. The separation is appropriate.
 
 Performance:
-- Sample storage is bounded, and overlay snapshots are only built while visible and at the configured refresh rate. Mesh upload time is excluded from mesh timing and remains visible through frame time, as documented.
+- Generation runs off the main thread where workers are supported. Result acceptance, lighting, and meshing remain on the main thread with a four-result-per-update cap. Remaining frame cost and synchronous warm-up are documented in `PROGRESS.md`.
 
 Reviewed files:
 - `CLAUDE.md`
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
 - `src/config/constants.ts`
+- `src/debug/debugText.ts`
 - `src/main.ts`
-- `src/player/InputController.ts`
 - `src/world/ChunkManager.ts`
-- `src/world/ChunkStore.ts`
-- `src/world/mesher/remesh.ts`
-- `src/debug/`
-- `src/ui/DebugOverlay.ts`
-- Relevant tests under `tests/`
+- `src/world/WorldGenerator.ts`
+- `src/world/worker/ChunkGenerationService.ts`
+- `src/world/worker/WorkerChunkGenerationService.ts`
+- `src/world/worker/ChunkGenWorkerCore.ts`
+- `src/world/worker/chunkGenProtocol.ts`
+- `src/world/worker/chunkGen.worker.ts`
+- `src/world/worker/createChunkGenerationService.ts`
+- `tests/ChunkManagerStreaming.test.ts`
+- `tests/debugText.test.ts`
+- Current git diff
 
-Recommendation:
-- Continue
+Recommendation:  
+Continue

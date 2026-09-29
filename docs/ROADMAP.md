@@ -222,10 +222,10 @@ Close browser → reopen → world state remains.
 
 ## Optimization
 
-* [ ] Web Worker generation
-* [ ] Transferable buffers
+* [x] Web Worker generation
+* [x] Transferable buffers
 * [ ] Greedy meshing
-* [ ] Chunk prioritization
+* [x] Chunk prioritization
 * [ ] Chunk cache
 * [ ] Mesh disposal
 * [ ] Object pooling

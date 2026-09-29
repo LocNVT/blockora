@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 8: batch neighbour remeshes (optimisation 1).
+Phase 8: time-based streaming budget (optimisation 2).
 
 ---
 
@@ -169,6 +169,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
+* Streaming: walking still remeshes the old edge row once per center move (~2× — an extra never-meshed ring would fix it); accepting 4 chunks / frame still costs ~35 ms p95 on the test machine (a time-based budget would smooth it); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
 * Profiling: mesh upload (`sink.upsert`) isn't timed separately (only visible in frame time); frame time includes vsync wait; headless numbers are software-GPU.
 * Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
 * Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
@@ -251,6 +252,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 optimisation 1: worker generation + mesh-once streaming
+
+* `src/world/worker/`: `ChunkGenerationService` (`request` / `poll` / `cancel` / `dispose`, ids assigned by ChunkManager) with an in-process implementation (tests + fallback) and a Web Worker implementation (`chunkGen.worker.ts`, own 21 kB bundle chunk, no three). Messages: init(seed) / generate(id, cx, cz) / cancel(id) → generated(id, cx, cz, blocks as transferred buffer, genMs) / failed; worker failure → log once, reroute to main thread. Both paths share `generateChunkMessage` (byte-identical to `WorldGenerator.generateChunk`, tested).
+* `ChunkManager` async: nearest-first requests, `maxInFlight` 8, accept ≤ 4 / update, stale / cancelled results dropped by request id, unload cancels in-flight. Accept = edit diff → setChunk → light → mesh queue (same order as before). `warmUp(center)` generates the 3×3 spawn area synchronously (startup + respawn). `CHUNK_STREAMING_CONFIG`.
+* Meshing: a chunk is meshed only when its full 3×3 neighbourhood is loaded or outside the radius (diagonals included — light can cross into a diagonal-shared neighbour); per-chunk mask of missing axis neighbours triggers one remesh when they arrive. Block edits still remesh immediately.
+* Measured (headless SwiftShader; main-thread rAF callback time): startup p95 86–88 → 37 ms, long tasks 65 → 5; walking p95 80 → 35 ms, max ~100 → ~50 ms, long tasks 20 → 0–1; meshes per new chunk 3.0 → 1.0 (startup), 2.5 → 1.8–2.0 (walking); heap 150 → 78 MB. Terrain identical (same draw calls / triangles). F3 shows `Chunk queue pending / in-flight / gen on worker|main`. Codex review PASS_WITH_NOTES (first round; notes: synchronous 3×3 warm-up is a startup / respawn stall risk; dispose not called).
 
 ## 2026-09-30 — Phase 8 profiling: F3 debug overlay
 
@@ -542,11 +550,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (66 files, 1093 tests)
+pnpm test → PASS (68 files, 1121 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 8 optimisation 1 (measured bottleneck: main-thread chunk streaming ≈ 11 ms / chunk): batch neighbour remeshes per frame (dedupe, remesh each dirty chunk once after the frame's loads) and re-measure with F3; then design the Web Worker pipeline (generation + light + meshing off the main thread, TypedArray transferables, main thread only uploads).
+Phase 8 optimisation 2: time-based accept / mesh budget per frame (e.g. stop accepting + meshing after N ms) to flatten the remaining ~35 ms p95 streaming frames, plus an extra never-meshed ring to bring walking remeshes to ~1×; re-measure with the same perf script (scratchpad perf-check.mjs). Then greedy meshing once measured on real hardware.

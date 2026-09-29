@@ -74,6 +74,13 @@ describe('formatDebugLines', () => {
     expect(lines[0]).toBe('Blockora  [WebGPU]');
     expect(lines).toContain('JS heap n/a');
   });
+
+  it('adds the chunk queue line after the chunk timings when streaming stats are given', () => {
+    const lines = formatDebugLines(snapshot({ chunkStreaming: { pending: 1234, inFlight: 8, generation: 'worker' } }));
+    expect(lines[8]).toBe('Chunk ms  gen 4.26  light 1.50  mesh n/a');
+    expect(lines[9]).toBe('Chunk queue  pending 1,234  in-flight 8  gen on worker');
+    expect(lines).toHaveLength(13);
+  });
 });
 
 describe('readers', () => {
