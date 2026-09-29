@@ -7,8 +7,14 @@ import { TreePlacer, TREE_MAX_HORIZONTAL_REACH } from './biome/TreePlacer';
 import type { BiomeDefinition } from './biome/Biome';
 import { OrePlacer } from './ore/OrePlacer';
 import { CavePlacer } from './cave/CavePlacer';
-import { StructurePlacer, footprintContains, type PlacedStructure } from './structure/StructurePlacer';
+import {
+  StructurePlacer,
+  footprintContains,
+  type FootprintBox,
+  type RegionLayout,
+} from './structure/StructurePlacer';
 import { stampStructure } from './structure/stampStructure';
+import { VILLAGE_PATH_BLOCK } from './structure/templates';
 import { WORLD_CONFIG, WORLD_GEN_CONFIG } from '../config/constants';
 
 const { chunkWidth, chunkDepth, chunkHeight, seaLevel } = WORLD_CONFIG;
@@ -23,8 +29,8 @@ const BEACH_HEIGHT_MARGIN = 1;
 /**
  * Structure lookup padding around a chunk: a tree rooted up to
  * TREE_MAX_HORIZONTAL_REACH outside the chunk is suppressed when its root is
- * within TREE_MAX_HORIZONTAL_REACH of a structure footprint, so structures
- * up to twice that reach away still matter to this chunk.
+ * within TREE_MAX_HORIZONTAL_REACH of a structure footprint or village path,
+ * so structures and paths up to twice that reach away still matter to this chunk.
  */
 const STRUCTURE_QUERY_PADDING = TREE_MAX_HORIZONTAL_REACH * 2;
 
@@ -41,10 +47,12 @@ const STRUCTURE_QUERY_PADDING = TREE_MAX_HORIZONTAL_REACH * 2;
  * dry since they're below the surface, not open to it), trees are
  * stamped on top (see stampTrees), and finally structures (surface ruins
  * and buried dungeons, see src/world/structure) are stamped last, so a
- * dungeon shell overwrites any cave or ore it intersects. Trees whose canopy
- * could touch a surface structure footprint are skipped rather than
- * overwritten, so ruins never end up with half-cut trees in them (dungeons
- * are buried below the soil and leave trees alone).
+ * dungeon shell overwrites any cave or ore it intersects. Village paths
+ * replace the top terrain block of their columns (before trees). Trees whose
+ * canopy could touch a surface structure footprint (ruin or village piece)
+ * or a village path are skipped rather than overwritten, so structures never
+ * end up with half-cut trees in them (dungeons are buried below the soil and
+ * leave trees alone).
  *
  * Runs on the main thread for now (Web Worker offload is Phase 8).
  */
@@ -138,9 +146,10 @@ export class WorldGenerator {
       }
     }
 
-    const structures = this.structuresNearChunk(cx, cz);
-    this.stampTrees(cx, cz, blocks, structures);
-    for (const structure of structures) {
+    const layout = this.layoutNearChunk(cx, cz);
+    this.stampPaths(cx, cz, blocks, layout.paths);
+    this.stampTrees(cx, cz, blocks, layout);
+    for (const structure of layout.pieces) {
       stampStructure(structure, cx, cz, blocks);
     }
 
@@ -152,13 +161,36 @@ export class WorldGenerator {
     return this.structurePlacer.lootTableAt(x, y, z);
   }
 
-  /** Structures whose footprint lies within STRUCTURE_QUERY_PADDING of chunk (cx, cz). */
-  private structuresNearChunk(cx: number, cz: number): PlacedStructure[] {
+  /** Structure pieces and village paths within STRUCTURE_QUERY_PADDING of chunk (cx, cz). */
+  private layoutNearChunk(cx: number, cz: number): RegionLayout {
     const minX = cx * chunkWidth - STRUCTURE_QUERY_PADDING;
     const minZ = cz * chunkDepth - STRUCTURE_QUERY_PADDING;
     const maxX = (cx + 1) * chunkWidth - 1 + STRUCTURE_QUERY_PADDING;
     const maxZ = (cz + 1) * chunkDepth - 1 + STRUCTURE_QUERY_PADDING;
-    return this.structurePlacer.structuresIntersecting(minX, minZ, maxX, maxZ);
+    return this.structurePlacer.layoutIntersecting(minX, minZ, maxX, maxZ);
+  }
+
+  /**
+   * Village paths: the top terrain block (at the pure surfaceHeight) of every
+   * path column inside this chunk becomes VILLAGE_PATH_BLOCK, so paths follow
+   * the terrain. Only this chunk's columns are touched and the height is a
+   * pure query, so the result is independent of chunk generation order.
+   */
+  private stampPaths(cx: number, cz: number, blocks: Uint8Array, paths: readonly FootprintBox[]): void {
+    const chunkMinX = cx * chunkWidth;
+    const chunkMinZ = cz * chunkDepth;
+    for (const path of paths) {
+      const fromX = Math.max(path.minX, chunkMinX);
+      const toX = Math.min(path.maxX, chunkMinX + chunkWidth - 1);
+      const fromZ = Math.max(path.minZ, chunkMinZ);
+      const toZ = Math.min(path.maxZ, chunkMinZ + chunkDepth - 1);
+      for (let worldX = fromX; worldX <= toX; worldX += 1) {
+        for (let worldZ = fromZ; worldZ <= toZ; worldZ += 1) {
+          const surfaceY = this.surfaceHeight(worldX, worldZ);
+          blocks[localIndex(worldX - chunkMinX, surfaceY, worldZ - chunkMinZ)] = VILLAGE_PATH_BLOCK;
+        }
+      }
+    }
   }
 
   /**
@@ -168,14 +200,14 @@ export class WorldGenerator {
    * inside this chunk. Skips beach/underwater columns (surface at or below
    * seaLevel + BEACH_HEIGHT_MARGIN, matching the beach-sand cutoff used
    * above) since a bare trunk in water/sand would look wrong, and trees
-   * rooted within canopy reach of a surface structure footprint (the structure wins).
+   * rooted within canopy reach of a surface structure footprint or a village
+   * path (the structure wins).
    */
-  private stampTrees(
-    cx: number,
-    cz: number,
-    blocks: Uint8Array,
-    structures: readonly PlacedStructure[],
-  ): void {
+  private stampTrees(cx: number, cz: number, blocks: Uint8Array, layout: RegionLayout): void {
+    const blockers: FootprintBox[] = [
+      ...layout.pieces.filter((piece) => piece.template.placement === 'surface'),
+      ...layout.paths,
+    ];
     const chunkMinX = cx * chunkWidth;
     const chunkMinZ = cz * chunkDepth;
 
@@ -199,13 +231,7 @@ export class WorldGenerator {
         if (isBeach) {
           continue;
         }
-        if (
-          structures.some(
-            (s) =>
-              s.template.placement === 'surface' &&
-              footprintContains(s, worldX, worldZ, TREE_MAX_HORIZONTAL_REACH),
-          )
-        ) {
+        if (blockers.some((box) => footprintContains(box, worldX, worldZ, TREE_MAX_HORIZONTAL_REACH))) {
           continue;
         }
 

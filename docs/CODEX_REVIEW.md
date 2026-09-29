@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation for this diff: 1003 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation for this diff: 1030 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
 Task:
-Phase 6: dungeon structure
+Phase 6: village
 
 Summary:
-Adds deterministic underground dungeon placement, room stamping, dungeon chest loot, and focused regression coverage. No concrete critical or important issue found in the reviewed diff.
+Village layouts, path stamping, house templates, and deterministic loot are integrated with existing structure generation. I found no concrete critical or important issues in the reviewed diff.
 
 Critical:
 - None
@@ -17,20 +17,19 @@ Important:
 - None
 
 Minor:
-- Tests were inspected but not executed during this review.
-- The shared per-region template selection means a successful region candidate now chooses either a ruin or a dungeon, lowering ruin frequency. This matches the documented shared-grid design.
+- None
 
 Required fixes:
 - None
 
 Tests:
-- Dedicated dungeon tests cover placement and depth bounds, deterministic generation order, chest location and loot, and lighting/spawn behavior. Existing structure tests distinguish surface ruins. Not run during review.
+- Village tests cover layout determinism, site rules, generation order, paths, loot, and lighting. I reviewed the tests but did not run them.
 
 Architecture:
-- Placement remains deterministic and query based, with generation changes localized to structure templates, placement, and world generation integration. No material architecture concern found.
+- Village planning and terrain validation remain in the structure system; chunk generation stamps only the relevant pieces and paths.
 
 Performance:
-- Footprint scanning is bounded by the small templates and existing per-region placement model. No material performance concern found.
+- Chunk generation now evaluates village layouts for overlapping regions. I found no concrete performance issue in the reviewed code.
 
 Reviewed files:
 - `CLAUDE.md`
@@ -42,11 +41,9 @@ Reviewed files:
 - `src/world/structure/StructurePlacer.ts`
 - `src/world/structure/StructureTemplate.ts`
 - `src/world/structure/templates.ts`
-- `tests/StructurePlacer.test.ts`
-- `tests/chest.test.ts`
-- `tests/structureGeneration.test.ts`
-- `tests/structureRotation.test.ts`
-- `tests/dungeon.test.ts`
+- `src/world/structure/villageLayout.ts`
+- `src/world/structure/stampStructure.ts`
+- Relevant structure and village tests
 
 Recommendation:
-continue
+Continue

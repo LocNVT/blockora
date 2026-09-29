@@ -199,6 +199,30 @@ export const STRUCTURE_CONFIG = {
     /** Every footprint column's surface must be >= seaLevel + this (0 = no water above; rooms under open water would be unreachable without swimming). */
     minSurfaceAboveSeaLevel: 0,
   },
+  /**
+   * Villages (composite surface structures, see structure/villageLayout.ts):
+   * a centrepiece (well) plus minHouses..maxHouses houses on slots around it,
+   * each door facing the centre, joined to the centre by 1-wide gravel paths.
+   * Piece and path columns reuse minSurfaceAboveSeaLevel (no water).
+   */
+  village: {
+    /**
+     * Fraction (0..1) of accepted region candidates that try a village first;
+     * a rejected village site falls back to the region's ruin/dungeon pick,
+     * so villages only replace ruins/dungeons where they actually fit.
+     */
+    share: 0.6,
+    minHouses: 3,
+    maxHouses: 5,
+    /** Distance (blocks) from the village centre to a house centre on the four axis slots. */
+    axisSlotDistance: 13,
+    /** Per-axis offset (blocks) of the four diagonal house slots from the centre (< axisSlotDistance - house reach, so diagonal paths pass beside axis houses). */
+    diagonalSlotOffset: 9,
+    /** Surface height range allowed across each piece footprint (stricter than maxSlope). */
+    maxPieceSlope: 2,
+    /** Surface height range allowed across all piece footprints of the village together. */
+    maxAreaSlope: 5,
+  },
 } as const;
 
 export const ATLAS_CONFIG = {

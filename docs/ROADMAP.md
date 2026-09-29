@@ -175,10 +175,10 @@ Player can encounter and fight mobs.
 
 ---
 
-# Phase 6 — Structures
+# Phase 6 — Structures ✅ (completed 2026-09-30)
 
 * [x] Structure system
-* [ ] Village
+* [x] Village
 * [x] Ruins
 * [x] Dungeon
 * [x] Loot
