@@ -5,7 +5,8 @@ import { parseLayers, type LayerLegendEntry, type StructureTemplate } from './St
 /**
  * Shared layout legend. Upper-case = `force`; `r` = rubble that only fills
  * empty cells; `.` = carve to air; ' ' (LAYER_SKIP_CHAR) = untouched;
- * X / D = loot chests (ruin / dungeon loot table).
+ * X / D / V = loot chests (ruin / dungeon / village loot table); W = wood
+ * post, L = glass window, T = torch, w = water.
  */
 const LEGEND: Readonly<Record<string, LayerLegendEntry>> = {
   C: { blockId: BlockId.Cobblestone, mode: 'force' },
@@ -16,6 +17,11 @@ const LEGEND: Readonly<Record<string, LayerLegendEntry>> = {
   '.': { blockId: BlockId.Air, mode: 'force' },
   X: { blockId: BlockId.Chest, mode: 'force', lootTable: 'ruin_chest' },
   D: { blockId: BlockId.Chest, mode: 'force', lootTable: 'dungeon_chest' },
+  V: { blockId: BlockId.Chest, mode: 'force', lootTable: 'village_chest' },
+  W: { blockId: BlockId.Wood, mode: 'force' },
+  L: { blockId: BlockId.Glass, mode: 'force' },
+  T: { blockId: BlockId.Torch, mode: 'force' },
+  w: { blockId: BlockId.Water, mode: 'force' },
 };
 
 const RUIN_SIZE = { width: 7, height: 5, depth: 7 } as const;
@@ -133,7 +139,109 @@ export const DUNGEON_TEMPLATE: StructureTemplate = {
 };
 
 /**
- * Every template the StructurePlacer may pick from; one per region, chosen by
- * the region's template hash (so a region holds a ruin or a dungeon, never both).
+ * Single-piece templates the StructurePlacer may pick from; one per region,
+ * chosen by the region's template hash (so a region holds a ruin or a
+ * dungeon, never both). Villages are a separate per-region option (see
+ * STRUCTURE_CONFIG.village and the VILLAGE_* templates below).
  */
 export const STRUCTURE_TEMPLATES: readonly StructureTemplate[] = [RUIN_TEMPLATE, DUNGEON_TEMPLATE];
+
+/** Biomes every village piece footprint and path column must belong to (flat, open land). */
+export const VILLAGE_BIOMES: readonly BiomeId[] = [BiomeId.Plains, BiomeId.Desert];
+
+/** Block that replaces the top terrain block on village path columns. */
+export const VILLAGE_PATH_BLOCK: BlockId = BlockId.Gravel;
+
+/** Every house has its doorway at local x = 2 of the z = 0 wall; the path starts one step outside. */
+const HOUSE_ENTRANCE = { x: 2, z: -1 } as const;
+
+const COTTAGE_SIZE = { width: 5, height: 5, depth: 5 } as const;
+
+/**
+ * Small village cottage: cobblestone floor slab (foundation below), plank
+ * walls with wood corner posts, a 1x2 doorway in the middle of the z = 0
+ * wall, glass windows in both side walls and the back wall, a flat plank
+ * roof, and a 3x3x3 interior holding a torch (T, lights the whole room so
+ * hostiles cannot spawn inside) and a village chest (V) in the back corners.
+ * Layers bottom (floor, the anchor layer) to top; rows z = 0..4, characters x = 0..4.
+ */
+const COTTAGE_LAYERS: readonly (readonly string[])[] = [
+  ['CCCCC', 'CCCCC', 'CCCCC', 'CCCCC', 'CCCCC'],
+  ['WP.PW', 'P...P', 'P...P', 'PT.VP', 'WPPPW'],
+  ['WP.PW', 'P...P', 'L...L', 'P...P', 'WPLPW'],
+  ['WPPPW', 'P...P', 'P...P', 'P...P', 'WPPPW'],
+  ['PPPPP', 'PPPPP', 'PPPPP', 'PPPPP', 'PPPPP'],
+];
+
+export const VILLAGE_COTTAGE_TEMPLATE: StructureTemplate = {
+  id: 'village_cottage',
+  size: COTTAGE_SIZE,
+  anchor: { x: 2, y: 0, z: 2 },
+  blocks: parseLayers(COTTAGE_SIZE, COTTAGE_LAYERS, LEGEND),
+  placement: 'surface',
+  allowedBiomes: VILLAGE_BIOMES,
+  foundationBlock: BlockId.Cobblestone,
+  entrance: HOUSE_ENTRANCE,
+};
+
+const LONGHOUSE_SIZE = { width: 5, height: 6, depth: 7 } as const;
+
+/**
+ * Longer village house: same construction as the cottage on a 5x7
+ * footprint (3x5x3 interior), two windows per long wall and one in the back,
+ * a torch on the middle of the -X wall and a village chest in the back
+ * corner, under a stepped plank roof (full eaves layer + 3-wide ridge).
+ * Layers bottom (floor, the anchor layer) to top; rows z = 0..6, characters x = 0..4.
+ */
+const LONGHOUSE_LAYERS: readonly (readonly string[])[] = [
+  ['CCCCC', 'CCCCC', 'CCCCC', 'CCCCC', 'CCCCC', 'CCCCC', 'CCCCC'],
+  ['WP.PW', 'P...P', 'P...P', 'PT..P', 'P...P', 'P..VP', 'WPPPW'],
+  ['WP.PW', 'P...P', 'L...L', 'P...P', 'L...L', 'P...P', 'WPLPW'],
+  ['WPPPW', 'P...P', 'P...P', 'P...P', 'P...P', 'P...P', 'WPPPW'],
+  ['PPPPP', 'PPPPP', 'PPPPP', 'PPPPP', 'PPPPP', 'PPPPP', 'PPPPP'],
+  [' PPP ', ' PPP ', ' PPP ', ' PPP ', ' PPP ', ' PPP ', ' PPP '],
+];
+
+export const VILLAGE_LONGHOUSE_TEMPLATE: StructureTemplate = {
+  id: 'village_longhouse',
+  size: LONGHOUSE_SIZE,
+  anchor: { x: 2, y: 0, z: 3 },
+  blocks: parseLayers(LONGHOUSE_SIZE, LONGHOUSE_LAYERS, LEGEND),
+  placement: 'surface',
+  allowedBiomes: VILLAGE_BIOMES,
+  foundationBlock: BlockId.Cobblestone,
+  entrance: HOUSE_ENTRANCE,
+};
+
+const WELL_SIZE = { width: 5, height: 5, depth: 5 } as const;
+
+/**
+ * Village centrepiece: a raised cobblestone well basin (solid base slab with
+ * foundation below, a 1-high rim around a 3x3 pool of still water), wood
+ * posts on the four corners and an open plank frame on top. Water is static
+ * (no fluid simulation) and fully enclosed by the rim, so it never spills.
+ * Layers bottom (floor, the anchor layer) to top; rows z = 0..4, characters x = 0..4.
+ */
+const WELL_LAYERS: readonly (readonly string[])[] = [
+  ['CCCCC', 'CCCCC', 'CCCCC', 'CCCCC', 'CCCCC'],
+  ['CCCCC', 'CwwwC', 'CwwwC', 'CwwwC', 'CCCCC'],
+  ['W   W', '     ', '     ', '     ', 'W   W'],
+  ['W   W', '     ', '     ', '     ', 'W   W'],
+  ['PPPPP', 'P   P', 'P   P', 'P   P', 'PPPPP'],
+];
+
+export const VILLAGE_WELL_TEMPLATE: StructureTemplate = {
+  id: 'village_well',
+  size: WELL_SIZE,
+  anchor: { x: 2, y: 0, z: 2 },
+  blocks: parseLayers(WELL_SIZE, WELL_LAYERS, LEGEND),
+  placement: 'surface',
+  allowedBiomes: VILLAGE_BIOMES,
+  foundationBlock: BlockId.Cobblestone,
+};
+
+/** House designs a village slot may get (picked per house by the village layout hash). */
+export const VILLAGE_HOUSE_TEMPLATES: readonly StructureTemplate[] = [
+  VILLAGE_COTTAGE_TEMPLATE,
+  VILLAGE_LONGHOUSE_TEMPLATE,
+];

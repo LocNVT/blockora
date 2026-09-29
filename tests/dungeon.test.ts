@@ -180,9 +180,9 @@ describe('placement kind selection', () => {
     const kinds = new Set<string>();
     for (let rx = -8; rx < 8; rx += 1) {
       for (let rz = -8; rz < 8; rz += 1) {
-        const sa = a.structureInRegion(rx, rz);
-        expect(b.structureInRegion(rx, rz)).toEqual(sa);
-        if (sa) kinds.add(sa.template.placement);
+        const sa = a.layoutForRegion(rx, rz).pieces;
+        expect(b.layoutForRegion(rx, rz).pieces).toEqual(sa);
+        for (const piece of sa) kinds.add(piece.template.placement);
       }
     }
     expect([...kinds].sort()).toEqual(['surface', 'underground']);
@@ -268,7 +268,8 @@ describe('underground site rules', () => {
 describe('ruin / dungeon separation', () => {
   it('never overlaps footprints: every structure stays inside its own region, one per region', () => {
     const regions = new Set<string>();
-    for (const s of structures) {
+    // One ruin/dungeon per region; village regions hold several pieces (see village.test.ts).
+    for (const s of structures.filter((p) => STRUCTURE_TEMPLATES.includes(p.template))) {
       const key = `${s.regionX},${s.regionZ}`;
       expect(regions.has(key)).toBe(false);
       regions.add(key);

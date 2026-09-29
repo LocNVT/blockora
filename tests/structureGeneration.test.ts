@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { WorldGenerator } from '../src/world/WorldGenerator';
 import { StructurePlacer, type PlacedStructure } from '../src/world/structure/StructurePlacer';
+import { RUIN_TEMPLATE } from '../src/world/structure/templates';
 import { structureBlockWorldPosition } from '../src/world/structure/stampStructure';
 import { BlockId } from '../src/world/blocks';
 import type { Chunk } from '../src/world/Chunk';
@@ -75,8 +76,8 @@ function snapshot(chunks: ReadonlyMap<string, Chunk>, s: PlacedStructure): numbe
   return out;
 }
 
-// Ruin-specific fixtures: underground templates (dungeons) share the region grid; see dungeon.test.ts.
-const structures = placedStructures(SEED).filter((s) => s.template.placement === 'surface');
+// Ruin-specific fixtures: dungeons and village pieces share the region grid; see dungeon.test.ts / village.test.ts.
+const structures = placedStructures(SEED).filter((s) => s.template === RUIN_TEMPLATE);
 const fourChunkRuin = structures.find((s) => chunksCovering(s).coords.length === 4);
 
 describe('structure generation', () => {

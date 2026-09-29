@@ -50,6 +50,23 @@ export const LOOT_TABLES: Readonly<Record<string, LootTable>> = {
       { itemId: ItemId.StoneShovel, weight: 2, min: 1, max: 1 },
     ],
   },
+  /** Village houses: everyday supplies (food, building material, torches, basic tools); no ore. */
+  village_chest: {
+    rolls: { min: 3, max: 5 },
+    entries: [
+      { itemId: ItemId.Apple, weight: 7, min: 2, max: 5 },
+      { itemId: ItemId.RawPork, weight: 5, min: 1, max: 3 },
+      { itemId: ItemId.Planks, weight: 6, min: 4, max: 12 },
+      { itemId: ItemId.Stick, weight: 5, min: 2, max: 8 },
+      { itemId: ItemId.Torch, weight: 5, min: 2, max: 6 },
+      { itemId: ItemId.Coal, weight: 4, min: 1, max: 4 },
+      { itemId: ItemId.WoodenPickaxe, weight: 2, min: 1, max: 1 },
+      { itemId: ItemId.WoodenAxe, weight: 2, min: 1, max: 1 },
+      { itemId: ItemId.WoodenShovel, weight: 2, min: 1, max: 1 },
+      { itemId: ItemId.StoneAxe, weight: 1, min: 1, max: 1 },
+      { itemId: ItemId.StoneShovel, weight: 1, min: 1, max: 1 },
+    ],
+  },
 };
 
 /** Distinct from every other seed offset used by world gen / mobs. */

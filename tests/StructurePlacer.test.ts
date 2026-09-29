@@ -5,8 +5,14 @@ import {
   type PlacedStructure,
   type TerrainQuery,
 } from '../src/world/structure/StructurePlacer';
-import { RUIN_TEMPLATE, STRUCTURE_TEMPLATES } from '../src/world/structure/templates';
+import {
+  RUIN_TEMPLATE,
+  STRUCTURE_TEMPLATES,
+  VILLAGE_HOUSE_TEMPLATES,
+  VILLAGE_WELL_TEMPLATE,
+} from '../src/world/structure/templates';
 import { horizontalReach, type Rotation } from '../src/world/structure/rotation';
+import { villageMaxPathColumns } from '../src/world/structure/villageLayout';
 import { BiomeId, getBiomeDefinition, type BiomeDefinition } from '../src/world/biome/Biome';
 import { WorldGenerator } from '../src/world/WorldGenerator';
 import { STRUCTURE_CONFIG, WORLD_CONFIG } from '../src/config/constants';
@@ -34,11 +40,12 @@ function fakeTerrain(
   return terrain;
 }
 
-function structuresInRange(placer: StructurePlacer, range: number): (PlacedStructure | null)[] {
-  const list: (PlacedStructure | null)[] = [];
+/** Per-region piece lists (empty = nothing placed; a village region holds several pieces). */
+function structuresInRange(placer: StructurePlacer, range: number): (readonly PlacedStructure[])[] {
+  const list: (readonly PlacedStructure[])[] = [];
   for (let rx = -range; rx < range; rx += 1) {
     for (let rz = -range; rz < range; rz += 1) {
-      list.push(placer.structureInRegion(rx, rz));
+      list.push(placer.layoutForRegion(rx, rz).pieces);
     }
   }
   return list;
@@ -60,7 +67,7 @@ describe('StructurePlacer determinism', () => {
 
   it('places some but not all regions (spawnChance) on ideal terrain', () => {
     const placer = new StructurePlacer(3, fakeTerrain(() => DRY));
-    const placed = structuresInRange(placer, 10).filter((s) => s !== null).length;
+    const placed = structuresInRange(placer, 10).filter((s) => s.length > 0).length;
     expect(placed).toBeGreaterThan(0);
     expect(placed).toBeLessThan(400);
   });
@@ -70,10 +77,10 @@ describe('StructurePlacer determinism', () => {
     const forward = new StructurePlacer(1, gen);
     const backward = new StructurePlacer(1, gen);
     const fwd = structuresInRange(forward, 4);
-    const back: (PlacedStructure | null)[] = [];
+    const back: (readonly PlacedStructure[])[] = [];
     for (let rx = 3; rx >= -4; rx -= 1) {
       for (let rz = 3; rz >= -4; rz -= 1) {
-        back.unshift(backward.structureInRegion(rx, rz));
+        back.unshift(backward.layoutForRegion(rx, rz).pieces);
       }
     }
     expect(back).toEqual(fwd);
@@ -85,13 +92,12 @@ describe('StructurePlacer determinism', () => {
       4 * REGION_WIDTH - 1,
       4 * REGION_DEPTH - 1,
     );
-    expect(box).toEqual(fwd.filter((s) => s !== null));
+    expect(box).toEqual(fwd.flat());
   });
 
   it('keeps every footprint inside its own region (structures never overlap)', () => {
     const placer = new StructurePlacer(9, fakeTerrain(() => DRY));
-    for (const s of structuresInRange(placer, 8)) {
-      if (!s) continue;
+    for (const s of structuresInRange(placer, 8).flat()) {
       expect(Math.floor(s.minX / REGION_WIDTH)).toBe(s.regionX);
       expect(Math.floor(s.maxX / REGION_WIDTH)).toBe(s.regionX);
       expect(Math.floor(s.minZ / REGION_DEPTH)).toBe(s.regionZ);
@@ -102,8 +108,8 @@ describe('StructurePlacer determinism', () => {
   it('uses all four rotations across many regions', () => {
     const placer = new StructurePlacer(4, fakeTerrain(() => DRY));
     const rotations = new Set<Rotation>();
-    for (const s of structuresInRange(placer, 10)) {
-      if (s) rotations.add(s.rotation);
+    for (const s of structuresInRange(placer, 10).flat()) {
+      rotations.add(s.rotation);
     }
     expect(rotations.size).toBe(4);
   });
@@ -160,9 +166,9 @@ describe('StructurePlacer site validity', () => {
     const gen = new WorldGenerator(1);
     const placer = new StructurePlacer(1, gen);
     let checked = 0;
-    for (const s of structuresInRange(placer, 5)) {
+    for (const s of structuresInRange(placer, 5).flat()) {
       // Surface rules only; underground placement is covered in dungeon.test.ts.
-      if (!s || s.template.placement !== 'surface') continue;
+      if (s.template.placement !== 'surface') continue;
       checked += 1;
       let lo = Infinity;
       let hi = -Infinity;
@@ -186,9 +192,14 @@ describe('StructurePlacer lookup cost', () => {
   it('a chunk-sized query evaluates at most the 4 regions it can overlap', () => {
     const terrain = fakeTerrain(() => DRY);
     const placer = new StructurePlacer(1, terrain);
-    const footprintColumns = Math.max(
-      ...STRUCTURE_TEMPLATES.map((t) => t.size.width * t.size.depth),
-    );
+    const columns = (t: { size: { width: number; depth: number } }): number => t.size.width * t.size.depth;
+    // Per region: one village evaluation (every piece footprint + every path column) plus the
+    // ruin/dungeon fallback evaluation.
+    const villageColumns =
+      columns(VILLAGE_WELL_TEMPLATE) +
+      STRUCTURE_CONFIG.village.maxHouses * Math.max(...VILLAGE_HOUSE_TEMPLATES.map(columns)) +
+      villageMaxPathColumns();
+    const footprintColumns = Math.max(...STRUCTURE_TEMPLATES.map(columns)) + villageColumns;
     // Straddle a region corner so the box overlaps 4 regions.
     const minX = REGION_WIDTH - 8;
     const minZ = REGION_DEPTH - 8;
@@ -201,7 +212,7 @@ describe('footprintContains', () => {
   it('respects the margin on every side', () => {
     const s = new StructurePlacer(1, fakeTerrain(() => DRY));
     let placed: PlacedStructure | null = null;
-    for (let rx = 0; rx < 20 && !placed; rx += 1) placed = s.structureInRegion(rx, 0);
+    for (let rx = 0; rx < 20 && !placed; rx += 1) placed = s.layoutForRegion(rx, 0).pieces[0] ?? null;
     expect(placed).not.toBeNull();
     const p = placed!;
     expect(footprintContains(p, p.minX, p.minZ)).toBe(true);

@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-**Phase 6 — Structures**
+**Phase 7 — Persistence**
 
 ## Current Task
 
-Phase 6: village.
+Phase 7: save format + IndexedDB layer (not started).
 
 ---
 
@@ -100,7 +100,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 # Phase 6
 
 * [x] Structures
-* [ ] Village
+* [x] Village
 * [x] Ruins
 * [x] Dungeon
 * [x] Loot
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: contents are memory-only (lost on reload, Phase 7); player-placed chest blocks vanish when their chunk unloads (block edits aren't kept yet) but the container stays, so a new chest placed there gets the old contents back; `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
 * Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
@@ -248,6 +249,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 6 village (Phase 6 complete)
+
+* Composite structures: a region yields a `RegionLayout { pieces, paths }` (`layoutForRegion`). An accepted region rolls village (`STRUCTURE_CONFIG.village.share` 0.6) first; a rejected village site falls back to the unchanged ruin / dungeon roll. `src/world/structure/villageLayout.ts` (`planVillage`, pure): well at the centre, 3–5 houses on 8 slots (4 axis at 13, 4 diagonal at ±9) with doors facing the centre, overlap guard drops colliding houses.
+* Site: Plains / Desert on every piece and path column, surface ≥ sea level + 2, per-piece slope ≤ 2, whole-village span ≤ 5. Paths: 1-wide axis-aligned gravel replacing the pure `surfaceHeight` top block (straight or L), chunk-local; trees skipped near pieces and paths.
+* Templates: Cottage 5×5×5, Longhouse 5×7×6 (planks / wood / glass / cobblestone, one torch + one `village_chest` each), Well 5×5×5 (enclosed still water). Default seed per 400 regions: 46 ruins / 51 dungeons / 27 villages; nearest village centre (−34, 42, −176), ~163 blocks from spawn.
+* Lookup bound: ≤ 1804 column queries per chunk (was 324); generation time unchanged within noise. Verified in real Chrome (temporary teleport hook, removed): houses, paths, well, torch-lit interior at night, chest loot. Codex review PASS_WITH_NOTES (first round, no findings).
 
 ## 2026-09-30 — Phase 6 underground dungeon
 
@@ -515,11 +523,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (58 files, 1003 tests)
+pnpm test → PASS (59 files, 1030 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 6 village: a multi-building surface structure (3–5 small original houses around a central feature, gravel paths between them) on flat plains / desert sites, placed by the structure system as a composite (village layout hashed per region → several templates stamped chunk-locally), each house with a chest (`village_chest` loot) and a torch; exterior site checks via pure queries; chunk-order independence tested. Then verify Phase 6 exit criteria and start Phase 7 (persistence).
+Phase 7 persistence, first slice: versioned save format + IndexedDB layer (`src/save/`): world metadata (seed, version, time of day), player (position, rotation, health, hunger, inventory), modified blocks per chunk (sparse diff vs the seed-generated chunk, TypedArray-encoded), chest contents; save on interval + `visibilitychange` / `pagehide`; load on startup applies metadata + player, and chunk diffs are applied when a chunk is generated. Also keep player block edits across chunk unload (in-memory diff store is the same structure that gets persisted).

@@ -59,6 +59,12 @@ export interface StructureTemplate {
    * STRUCTURE_CONFIG.maxFoundationDepth, so the structure never floats.
    */
   readonly foundationBlock?: BlockId;
+  /**
+   * Houses: template-local X/Z cell just outside the doorway (one step past
+   * a footprint edge, so it lies outside the template bounds). The door faces
+   * from the footprint toward this cell; village paths start here.
+   */
+  readonly entrance?: { readonly x: number; readonly z: number };
 }
 
 /** Legend entry for `parseLayers`: which block a layout character stands for. */
