@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 8: pooled chunk geometries (bounded VAOs on WebGL2).
+Phase 8 wrap-up: decide greedy meshing / occlusion vs moving to Phase 9.
 
 ---
 
@@ -169,7 +169,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
-* WebGL2 fallback: three r186's WebGL backend never evicts VAOs (`vaoCache`), so each disposed chunk geometry leaves a VAO + buffer wrappers (≈ 744 VAOs after two 200-block round trips) — slow GPU memory growth on WebGL2 only (WebGPU has no VAOs); fixing needs three internals or pooled chunk geometries. Chunks with both sections now use 2 geometries (F3 count higher, draw calls unchanged). One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
+* Geometry pool: ~20 MB more CPU heap (and matching GPU memory) from capacity slack, capacities drift upward (small sections can take large free geometries); each growth replacement or free-list overflow still leaks one VAO on WebGL2 (bounded, tapers off); F3 "Geometries" includes free pooled geometries. One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
 * Startup: ~180–210 ms first-frame long task remains (first-use GL driver work; software GPU) plus ~130 ms module-eval task (atlas data-URL generation could be lazy / off-thread); mob / item-drop materials not confirmed precompiled (none on screen at startup).
 * Streaming: new rows appear one chunk later (meshed once ring neighbours load); block-edit remeshes bypass ChunkManager's mesh bookkeeping (harmless in practice — edits are within 6 blocks); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
 * Profiling: mesh upload (`sink.upsert`) isn't timed separately (only visible in frame time); frame time includes vsync wait; headless numbers are software-GPU.
@@ -254,6 +254,12 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 pooled chunk geometries (WebGL2 VAO leak)
+
+* Verified in three r186 source + GL call counting: `WebGLBackend.vaoCache` is keyed by per-attribute ids from a global counter and never evicted, so every drawn-then-disposed section geometry leaked ~1 VAO + 5 GL buffers (~90 KB GPU, deleted buffers held by the VAO): ~170–190 VAOs / ~16 MB per 200-block walk leg, unbounded.
+* `src/renderer/ChunkGeometryPool.ts`: geometries + attributes live for the pool's lifetime, capacity-sized arrays (classes ×1.25 from 1024 verts / 1536 indices, 64-aligned), fills copy into the prefix with `addUpdateRange` + `setDrawRange`, best-fit acquire, grow by replacing the largest free geometry, free list capped at 578 (full rendered area × 2 sections), misuse throws. Bounds from used vertices only (`setPrefixBounds`, matches three's `computeBoundingSphere`; frustum culling tested). `CHUNK_GEOMETRY_POOL_CONFIG`. `applyAtlasUvs` takes an optional `out` array.
+* Measured (3 × ±200-block round trips, WebGL2): VAOs 1264 → 513 (growth per leg 181, 1, 0, 0, 0); deleted-but-held GPU memory 95 → 3.6 MB; total chunk GPU memory capped at pool capacity (~61 MB); draw calls / triangles identical; also checked on the WebGPU backend (SwiftShader adapter): same output, flat heap, no validation errors. Codex review PASS_WITH_NOTES (first round; note: the free-list cap doesn't bound in-use geometries, and capacity slack grows retained memory — both documented).
 
 ## 2026-09-30 — Phase 8 GL warning + chunk mesh disposal leak
 
@@ -569,11 +575,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (70 files, 1142 tests)
+pnpm test → PASS (71 files, 1161 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 8: pooled / reused chunk geometries (bounded VAO + buffer count on the WebGL2 fallback; reuse buffers sized by capacity instead of creating one per remesh), then frustum-culling check. Greedy meshing after real-hardware numbers.
+Phase 8 remaining: greedy meshing (light-aware: merge only equal-light, equal-tile faces; needs the atlas UV approach to support tiling across merged quads — decide texture arrays / shader repeat vs per-tile UV wrap) and chunk culling beyond three's per-object frustum culling (cave / underground occlusion) — both should be justified by real-hardware GPU numbers first; if no real hardware is available, move to Phase 9 (UX & polish) and keep these open.

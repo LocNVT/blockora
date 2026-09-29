@@ -511,6 +511,31 @@ export const CHUNK_STREAMING_CONFIG = {
   outerRing: 1,
 } as const;
 
+/** Renderable sections per chunk mesh (opaque + transparent), each its own geometry. */
+const CHUNK_MESH_SECTIONS = 2;
+/** Chunk columns inside the meshed (rendered) radius. */
+const RENDERED_CHUNKS = (2 * WORLD_CONFIG.renderDistance + 1) ** 2;
+
+/**
+ * Pooled chunk section geometries (see ChunkGeometryPool). three r186's WebGL2
+ * backend never evicts a geometry's VAO, so geometries are reused instead of
+ * disposed. Capacity classes grow from these minimums by `capacityGrowthRatio`
+ * (1.25: ~20 % less memory than powers of two in a recorded walk, for ~5 %
+ * more growth replacements).
+ */
+export const CHUNK_GEOMETRY_POOL_CONFIG = {
+  minVertexCapacity: 1024,
+  minIndexCapacity: 1536,
+  capacityGrowthRatio: 1.25,
+  capacityQuantum: 64,
+  /**
+   * Released geometries kept for reuse; beyond this they are disposed. One
+   * full rendered area, so even a teleport (every chunk released, then
+   * re-meshed) is absorbed without disposing.
+   */
+  maxFreeGeometries: RENDERED_CHUNKS * CHUNK_MESH_SECTIONS,
+} as const;
+
 export const DEBUG_CONFIG = {
   /** Frames kept in the rolling FPS / frame-time window. */
   frameWindow: 120,
