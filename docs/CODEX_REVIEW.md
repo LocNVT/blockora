@@ -1,42 +1,53 @@
 # Codex Review
 
-_Run 2026-09-29 via scripts/codex-review.ps1 with `--skip-git-repo-check` (project is not a git repo). Codex ran read-only; this file was written by Claude from Codex's verbatim output._
-
-_Previous run (same day) returned FAIL: spawn hard-coded to (0, 0) underwater — fixed (see PROGRESS.md "Phase 4 dry-land spawn")._
+_Written by Claude from Codex's verbatim output (Codex sandbox was read-only). Reviewed commit 0c02e93._
 
 Status: PASS_WITH_NOTES
 
-Task: No implementation diff available; `docs/PROGRESS.md` lists the Phase 5 entity system as not started.
+Task:  
+Phase 5 entity system + passive pig
 
-Summary: No concrete critical or important issue was found in the available project state. Git reports that this workspace is not a repository, so I could not inspect the requested diff or identify changed files.
+Summary:  
+The commit adds a plain-data entity store, passive pig AI and voxel physics, spawn/despawn rules, and instanced rendering. No concrete critical or important defect was found in the reviewed implementation.
 
 Critical:
-- None.
+- None
 
 Important:
-- None.
+- None
 
 Minor:
-- The requested diff review could not be completed because Git metadata is unavailable.
+- `mobAI` and `mobPhysics` assume nonnegative, finite `dt`; the production `updateMobs` path clamps the frame delta.
+- `MobRenderer.update` allocates a filtered array and a `Set` each frame. The current passive-mob cap of 12 keeps this bounded; profile before raising the cap.
 
 Required fixes:
-- None.
+- None
 
 Tests:
-- Not run; there was no identified change to validate.
+- New tests cover entity storage and removal, AI transitions and turning, collision and hazards, spawning and despawning, and deterministic sequences. `git diff --check HEAD^ HEAD` passes. Tests and build were not run during this review.
 
 Architecture:
-- No changed architecture was available to assess.
+- Simulation data and systems are separated from Three.js rendering, and collision reuses the shared voxel AABB core. The committed `PROGRESS.md` records the implemented slice. The separate uncommitted `CLAUDE.md` edit was excluded.
 
 Performance:
-- No changed code was available to assess.
+- Instanced meshes keep draw calls fixed across the current pig population, with explicit renderer disposal. Spawn checks are bounded to four attempts per five-second wave, and the mob population is capped.
 
 Reviewed files:
-- `CLAUDE.md`
+- `src/config/constants.ts`
+- `src/entities/EntityStore.ts`
+- `src/entities/mobAI.ts`
+- `src/entities/mobDefinitions.ts`
+- `src/entities/mobPhysics.ts`
+- `src/entities/mobSpawning.ts`
+- `src/entities/updateMobs.ts`
+- `src/main.ts`
+- `src/renderer/MobRenderer.ts`
+- `tests/EntityStore.test.ts`
+- `tests/mobAI.test.ts`
+- `tests/mobPhysics.test.ts`
+- `tests/mobSpawning.test.ts`
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
-- Source and test file inventory
 
-Recommendation:
-- Continue, with the diff review still outstanding.
-
+Recommendation:  
+Continue
