@@ -39,7 +39,8 @@ import { mobDefinition } from './entities/mobDefinitions';
 import { worldToChunkCoord } from './world/chunkCoords';
 import { BlockId } from './world/blocks';
 import { MeshBuffers, remeshChunks } from './world/mesher';
-import { applyLightAndCollectRemesh } from './world/blockEdit';
+import { applyLightAndCollectRemesh, type BlockChange } from './world/blockEdit';
+import { BlockEditStore } from './world/BlockEditStore';
 import { LightEngine } from './world/light';
 import {
   applyHotbarInput,
@@ -54,6 +55,9 @@ import { EatProgress } from './gameplay/eatProgress';
 import { blockUseAction } from './gameplay/blockUse';
 import { openChestContainer, type ChestContext } from './gameplay/chestActions';
 import { ChestStore } from './items/ChestStore';
+import { openSaveStore } from './save/IndexedDbSaveStore';
+import { applySave, createWorldSaver, loadSave, type GameSaveState } from './save/gameSave';
+import { SaveScheduler } from './save/SaveScheduler';
 import { playerAabb } from './player/voxelCollision';
 import { validateBlockTextures } from './world/texture/blockFaceTiles';
 import { TILE_NAMES } from './world/texture/tiles';
@@ -61,6 +65,7 @@ import {
   COMBAT_CONFIG,
   DAY_NIGHT_CONFIG,
   PLAYER_CONFIG,
+  SAVE_CONFIG,
   SURVIVAL_CONFIG,
   WORLD_CONFIG,
   WORLD_GEN_CONFIG,
@@ -75,6 +80,31 @@ import { CraftingGrid } from './crafting/CraftingGrid';
 import { HotbarHud } from './ui/HotbarHud';
 import { InventoryScreen } from './ui/InventoryScreen';
 
+/** World systems every committed block edit must update. */
+interface BlockEditTargets {
+  readonly store: ChunkStore;
+  readonly light: LightEngine;
+  readonly chunkMeshRenderer: ChunkMeshRenderer;
+  readonly meshBuffers: MeshBuffers;
+  readonly edits: BlockEditStore;
+}
+
+/**
+ * The single commit path for player block edits: records the change in the
+ * edit store (so it survives chunk unload and gets saved), relights and
+ * remeshes every affected chunk.
+ */
+function commitBlockChange(change: BlockChange, targets: BlockEditTargets): void {
+  targets.edits.record(change);
+  remeshChunks(
+    targets.store,
+    blockRegistry,
+    targets.chunkMeshRenderer,
+    applyLightAndCollectRemesh(change, targets.light),
+    targets.meshBuffers,
+  );
+}
+
 /**
  * Applies a block break (completed by `BreakProgress` reaching 'broken') at
  * the current raycast hit, using `tool`'s properties to decide the drop, and
@@ -83,10 +113,7 @@ import { InventoryScreen } from './ui/InventoryScreen';
  * block state in the same frame).
  */
 function applyBreak(
-  store: ChunkStore,
-  light: LightEngine,
-  chunkMeshRenderer: ChunkMeshRenderer,
-  meshBuffers: MeshBuffers,
+  targets: BlockEditTargets,
   drops: ItemDropSystem,
   hit: ReturnType<typeof createVoxelRaycastBlockHit> | null,
   tool: ReturnType<ItemRegistry['toolFor']>,
@@ -94,20 +121,14 @@ function applyBreak(
   chests: ChestContext,
 ): boolean {
   const blockDefBeforeBreak = hit !== null ? blockRegistry.get(hit.blockId) : null;
-  const change = breakAndDrop(store, blockRegistry, itemRegistry, drops, hit, Math.random, tool, chests);
+  const change = breakAndDrop(targets.store, blockRegistry, itemRegistry, drops, hit, Math.random, tool, chests);
   if (change === null) {
     return false;
   }
   if (blockDefBeforeBreak !== null) {
     applyToolWear(inventory, blockDefBeforeBreak, tool, itemRegistry);
   }
-  remeshChunks(
-    store,
-    blockRegistry,
-    chunkMeshRenderer,
-    applyLightAndCollectRemesh(change, light),
-    meshBuffers,
-  );
+  commitBlockChange(change, targets);
   return true;
 }
 
@@ -117,25 +138,16 @@ function applyBreak(
  * edit was made (see `applyBreak` for the re-raycast rationale).
  */
 function applyPlace(
-  store: ChunkStore,
-  light: LightEngine,
-  chunkMeshRenderer: ChunkMeshRenderer,
-  meshBuffers: MeshBuffers,
+  targets: BlockEditTargets,
   inventory: Inventory,
   hit: ReturnType<typeof createVoxelRaycastBlockHit> | null,
   playerBox: ReturnType<typeof playerAabb>,
 ): boolean {
-  const change = placeSelectedItem(store, blockRegistry, itemRegistry, inventory, hit, playerBox);
+  const change = placeSelectedItem(targets.store, blockRegistry, itemRegistry, inventory, hit, playerBox);
   if (change === null) {
     return false;
   }
-  remeshChunks(
-    store,
-    blockRegistry,
-    chunkMeshRenderer,
-    applyLightAndCollectRemesh(change, light),
-    meshBuffers,
-  );
+  commitBlockChange(change, targets);
   return true;
 }
 
@@ -155,10 +167,27 @@ async function bootstrap(): Promise<void> {
   const scene = sceneWithLights.scene;
   const camera = createCamera(window.innerWidth / window.innerHeight);
 
+  // Load the save (if any) before building world/player state: its seed
+  // drives generation and its chunk edits must be in place before the first
+  // chunk is generated. A save that can't be read starts a new world with
+  // saving disabled, so it is never overwritten.
+  const saveStore = await openSaveStore();
+  const loadResult = await loadSave(saveStore);
+  const saved = loadResult.status === 'loaded' ? loadResult.data : null;
+  const seed = saved?.meta.seed ?? WORLD_GEN_CONFIG.defaultSeed;
+  const blockEdits = new BlockEditStore();
+  if (saved !== null) {
+    blockEdits.restore(saved.chunks);
+    console.info(
+      `[save] loaded world (seed=${seed}, edited chunks=${blockEdits.chunkCount}, ` +
+        `saved ${new Date(saved.meta.savedAt).toISOString()})`,
+    );
+  }
+
   const gameTime = new GameTime();
   const dayNightLighting = new DayNightLighting(sceneWithLights);
 
-  const worldGenerator = new WorldGenerator(WORLD_GEN_CONFIG.defaultSeed);
+  const worldGenerator = new WorldGenerator(seed);
   const chunkStore = new ChunkStore();
   const lightEngine = new LightEngine(chunkStore, blockRegistry);
   const chunkMeshRenderer = new ChunkMeshRenderer(scene);
@@ -173,13 +202,16 @@ async function bootstrap(): Promise<void> {
     WORLD_CONFIG.renderDistance,
     undefined,
     lightEngine,
+    blockEdits,
   );
   // Only force-load a small area synchronously so there's solid ground under
   // the player before the first frame renders; the rest of renderDistance
   // streams in over subsequent frames via the per-frame budgeted update()
   // below, instead of stalling startup on the full render-distance area.
+  // A loaded world resumes at the saved position; respawn still uses `spawn`.
+  const startPosition = saved?.player.position ?? spawn.position;
   const spawnChunkStart = performance.now();
-  chunkManager.update(worldToChunkCoord(spawn.position.x, spawn.position.z));
+  chunkManager.update(worldToChunkCoord(startPosition.x, startPosition.z));
   const spawnLoadStats = chunkManager.stats;
   console.info(
     `[chunks] initial spawn load time=${(performance.now() - spawnChunkStart).toFixed(2)}ms ` +
@@ -192,9 +224,10 @@ async function bootstrap(): Promise<void> {
   const isTargetable = createTargetQuery(chunkStore, blockRegistry);
   const isFluid = createFluidQuery(chunkStore, blockRegistry);
 
-  // Spawn chunk is loaded above, so lift the spawn out of any generated tree/overhang.
-  const spawnFeetY = resolveSpawnHeight(chunkStore, blockRegistry, spawn.position);
-  const playerState = createPlayerState({ ...spawn.position, y: spawnFeetY }, spawn.pitch);
+  // Spawn chunk is loaded above, so lift a new world's spawn out of any
+  // generated tree/overhang (a saved position is restored as-is by applySave).
+  const spawnFeetY = saved === null ? resolveSpawnHeight(chunkStore, blockRegistry, spawn.position) : startPosition.y;
+  const playerState = createPlayerState({ ...startPosition, y: spawnFeetY }, spawn.pitch);
   const input = new InputController(renderer.domElement as HTMLCanvasElement);
   const hint = new PointerLockHint(container);
   const crosshair = new Crosshair(container);
@@ -210,7 +243,9 @@ async function bootstrap(): Promise<void> {
   const deathScreen = new DeathScreen(container);
 
   const inventory = new Inventory();
-  giveStartingItems(inventory);
+  if (saved === null) {
+    giveStartingItems(inventory);
+  }
   const hotbarHud = new HotbarHud(container, itemRegistry, blockRegistry);
 
   // Crafting grids are created once and reused across screen opens; only the
@@ -222,12 +257,52 @@ async function bootstrap(): Promise<void> {
 
   const drops = new ItemDropSystem();
   // Chest contents live outside the chunk arrays and are not dropped on chunk
-  // unload (the world stays in memory this phase; persistence is Phase 7).
+  // unload; they are persisted with the save.
   const chestContext: ChestContext = {
     chests: new ChestStore(),
-    worldSeed: WORLD_GEN_CONFIG.defaultSeed,
+    worldSeed: seed,
     lootTableAt: (x, y, z) => worldGenerator.structureLootTableAt(x, y, z),
   };
+  const blockEditTargets: BlockEditTargets = {
+    store: chunkStore,
+    light: lightEngine,
+    chunkMeshRenderer,
+    meshBuffers: editMeshBuffers,
+    edits: blockEdits,
+  };
+
+  const saveState: GameSaveState = {
+    seed,
+    gameTime,
+    player: playerState,
+    health: playerHealth,
+    hunger: playerHunger,
+    inventory,
+    chests: chestContext.chests,
+  };
+  if (saved !== null) {
+    applySave(saved, saveState);
+  }
+  const worldSaver = createWorldSaver(saveStore, loadResult, saveState, blockEdits);
+  const saveScheduler =
+    worldSaver === null
+      ? null
+      : new SaveScheduler(
+          SAVE_CONFIG.autosaveIntervalSeconds,
+          () => worldSaver.save(),
+          () => worldSaver.isDirty(),
+          (error: unknown) => console.warn('[save] saving the world failed; will retry.', error),
+        );
+  if (saveScheduler !== null) {
+    // Flush when the tab is hidden or the page goes away; the snapshot and the
+    // IndexedDB requests are issued synchronously inside the handler.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        saveScheduler.flush();
+      }
+    });
+    window.addEventListener('pagehide', () => saveScheduler.flush());
+  }
   /** World position of the chest whose screen is open, or null (inventory/crafting screens). */
   let openChestPos: { x: number; y: number; z: number } | null = null;
   const itemDropRenderer = new ItemDropRenderer(scene, itemRegistry, blockRegistry);
@@ -242,7 +317,7 @@ async function bootstrap(): Promise<void> {
   const entityStore = new EntityStore();
   const mobRenderer = new MobRenderer(scene, chunkStore);
   const mobSpawnTimer = createMobSpawnTimer();
-  const mobRng = mulberry32(WORLD_GEN_CONFIG.defaultSeed + MOB_RNG_SEED_OFFSET);
+  const mobRng = mulberry32(seed + MOB_RNG_SEED_OFFSET);
 
   const timer = new THREE.Timer();
   timer.connect(document);
@@ -518,10 +593,7 @@ async function bootstrap(): Promise<void> {
         let edited = false;
         if (breakState === 'broken') {
           edited = applyBreak(
-            chunkStore,
-            lightEngine,
-            chunkMeshRenderer,
-            editMeshBuffers,
+            blockEditTargets,
             drops,
             hit,
             tool,
@@ -530,10 +602,7 @@ async function bootstrap(): Promise<void> {
           );
         } else if (actions.placePressed && selectedFood === undefined && !attacking) {
           edited = applyPlace(
-            chunkStore,
-            lightEngine,
-            chunkMeshRenderer,
-            editMeshBuffers,
+            blockEditTargets,
             inventory,
             hit,
             playerAabb(playerState),
@@ -594,6 +663,8 @@ async function bootstrap(): Promise<void> {
 
     blockOutline.update(hit);
     hotbarHud.update(inventory);
+
+    saveScheduler?.update(dt);
 
     renderer.render(scene, camera);
   });

@@ -28,12 +28,29 @@ export function chestKey(x: number, y: number, z: number): number {
   return ((x + maxHorizontalCoord) * HORIZONTAL_SPAN + (z + maxHorizontalCoord)) * chunkHeight + y;
 }
 
+/** Inverse of `chestKey`. */
+export function chestPositionFromKey(key: number): { x: number; y: number; z: number } {
+  const y = key % chunkHeight;
+  const column = (key - y) / chunkHeight;
+  const zShifted = column % HORIZONTAL_SPAN;
+  const xShifted = (column - zShifted) / HORIZONTAL_SPAN;
+  return { x: xShifted - maxHorizontalCoord, y, z: zShifted - maxHorizontalCoord };
+}
+
+/** One stored chest container and its world position. */
+export interface ChestEntry {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly container: Inventory;
+}
+
 /**
  * Block-entity storage for chests: world block position -> 27-slot container.
  * A container is an `Inventory` with no hotbar, so stacking/merge/split rules
  * are the single existing implementation. Data lives outside the chunk voxel
  * arrays and is NOT tied to chunk load state (unloading a chunk never drops
- * its chests' contents; persistence is a later phase).
+ * its chests' contents; src/save persists them).
  *
  * `initialised` remembers every position that has ever had a container, even
  * after the chest is broken, so lazily-filled loot can never be rolled twice
@@ -72,6 +89,21 @@ export class ChestStore {
       this.initialised.add(key);
     }
     return container;
+  }
+
+  /** Every stored container with its position (live containers, not copies). */
+  entries(): ChestEntry[] {
+    return Array.from(this.containers, ([key, container]) => ({ ...chestPositionFromKey(key), container }));
+  }
+
+  /** Every position that has ever held a container (see `wasInitialised`). */
+  initialisedPositions(): { x: number; y: number; z: number }[] {
+    return Array.from(this.initialised, chestPositionFromKey);
+  }
+
+  /** Marks a position initialised without creating a container (save restore). */
+  markInitialised(x: number, y: number, z: number): void {
+    this.initialised.add(chestKey(x, y, z));
   }
 
   /** Removes and returns the container (its position stays marked initialised). */

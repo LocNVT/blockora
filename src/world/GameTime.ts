@@ -161,6 +161,12 @@ export class GameTime {
     return this.cycles + Math.floor(this.elapsed / this.cycleLengthSeconds);
   }
 
+  /** Restores a saved clock: `dayCount` full cycles completed, then `timeOfDay` into the current one. */
+  restore(dayCount: number, timeOfDay: number): void {
+    this.cycles = Math.max(0, Math.floor(dayCount));
+    this.elapsed = (((timeOfDay % 1) + 1) % 1) * this.cycleLengthSeconds;
+  }
+
   /** Jumps directly to a given timeOfDay fraction in [0, 1), preserving dayCount. */
   setTimeOfDay(t: number): void {
     const wrapped = ((t % 1) + 1) % 1;
