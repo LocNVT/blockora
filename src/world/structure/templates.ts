@@ -13,6 +13,7 @@ const LEGEND: Readonly<Record<string, LayerLegendEntry>> = {
   G: { blockId: BlockId.Gravel, mode: 'force' },
   r: { blockId: BlockId.Gravel, mode: 'ifAir' },
   '.': { blockId: BlockId.Air, mode: 'force' },
+  X: { blockId: BlockId.Chest, mode: 'force', lootTable: 'ruin_chest' },
 };
 
 const RUIN_SIZE = { width: 7, height: 5, depth: 7 } as const;
@@ -20,12 +21,13 @@ const RUIN_SIZE = { width: 7, height: 5, depth: 7 } as const;
 /**
  * Small abandoned ruin: cobblestone/stone walls of uneven height (tallest at
  * the -X/-Z corner) with a doorway, a window gap and a collapsed +X/+Z corner
- * spilling gravel; a rotted plank floor with holes. Layers bottom (floor, the
+ * spilling gravel; a rotted plank floor with holes and one loot chest (X)
+ * on the floor near the -X wall. Layers bottom (floor, the
  * anchor layer) to top; each layer lists rows z = 0..6, characters x = 0..6.
  */
 const RUIN_LAYERS: readonly (readonly string[])[] = [
   ['CCCSCCC', 'CPPPPPC', 'SPP PPC', 'CPPPP C', 'CP PPPS', 'CPPPPGG', 'CCSCGG '],
-  ['CCC.CCS', 'C.....C', 'S.....C', 'C.....S', 'C....r.', 'C...rG ', 'SCC.G  '],
+  ['CCC.CCS', 'C.....C', 'S.....C', 'C.X...S', 'C....r.', 'C...rG ', 'SCC.G  '],
   ['CSC.CS ', 'C.....C', '......C', 'C......', 'S......', 'C..... ', 'CC ..  '],
   ['C CP C ', 'C.....C', 'S......', '.......', 'C......', '.......', 'C......'],
   ['C  S   ', 'C      ', '       ', '       ', '       ', '       ', 'C      '],

@@ -15,6 +15,8 @@ export interface StructureBlock {
   readonly dz: number;
   readonly blockId: BlockId;
   readonly mode: PlacementMode;
+  /** Set on container blocks (chests): id of the loot table (src/items/lootTables) filled on first open. */
+  readonly lootTable?: string;
 }
 
 export interface StructureSize {
@@ -54,6 +56,7 @@ export interface StructureTemplate {
 export interface LayerLegendEntry {
   readonly blockId: BlockId;
   readonly mode: PlacementMode;
+  readonly lootTable?: string;
 }
 
 /** Layout character meaning "leave the generated terrain untouched". */
@@ -91,7 +94,11 @@ export function parseLayers(
         if (!entry) {
           throw new RangeError(`parseLayers: unknown layout character '${char}'.`);
         }
-        blocks.push({ dx, dy, dz, blockId: entry.blockId, mode: entry.mode });
+        blocks.push(
+          entry.lootTable === undefined
+            ? { dx, dy, dz, blockId: entry.blockId, mode: entry.mode }
+            : { dx, dy, dz, blockId: entry.blockId, mode: entry.mode, lootTable: entry.lootTable },
+        );
       }
     });
   });

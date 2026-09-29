@@ -15,6 +15,8 @@ import type { ItemDropSystem, Vec3 } from '../items/ItemDrops';
 import { ITEM_DROP_CONFIG } from '../config/constants';
 import { canHarvest } from './breakTime';
 import { tryBreakBlock, tryPlaceBlock } from './blockInteraction';
+import { spillChest, type ChestContext } from './chestActions';
+import { BlockId } from '../world/blocks';
 
 /**
  * Applies one frame's hotbar select/scroll input to `inventory`. Select is
@@ -74,7 +76,7 @@ export function placeSelectedItem(
  * `tool` is the held item's tool properties (undefined = bare hand). A block
  * with `requiresTool` set only drops its item when broken with a matching
  * tool (see `canHarvest`); otherwise the block is still destroyed but nothing
- * drops.
+ * drops. When `chests` is given, breaking a chest also spills its contents.
  */
 export function breakAndDrop(
   store: ChunkStore,
@@ -84,10 +86,15 @@ export function breakAndDrop(
   hit: VoxelRaycastBlockHit | null,
   random: () => number,
   tool?: ToolProperties,
+  chests?: ChestContext,
 ): BlockChange | null {
   const change = tryBreakBlock(store, blockRegistry, hit);
   if (change === null) {
     return null;
+  }
+
+  if (change.previous === BlockId.Chest && chests !== undefined) {
+    spillChest(chests, drops, random, change.wx, change.wy, change.wz);
   }
 
   const blockDef = blockRegistry.get(change.previous);

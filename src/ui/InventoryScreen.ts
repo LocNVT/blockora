@@ -6,8 +6,8 @@ import { iconTileForItem, durabilityBarColor } from '../items/itemIcons';
 import type { ContainerSession, SlotRef } from '../items/ContainerSession';
 import { ItemIconCache } from './itemIconCache';
 
-/** '2x2' = player inventory crafting; '3x3' = crafting table. */
-export type InventoryScreenMode = '2x2' | '3x3';
+/** '2x2' = player inventory crafting; '3x3' = crafting table; 'chest' = chest container above the inventory. */
+export type InventoryScreenMode = '2x2' | '3x3' | 'chest';
 
 /** Layout/visual constants for the inventory screen (kept local instead of scattered magic numbers). */
 const SCREEN_STYLE = {
@@ -33,6 +33,7 @@ const SCREEN_STYLE = {
 const STYLE_ELEMENT_ID = 'inventory-screen-style';
 const HOTBAR_SLOT_COUNT = 9;
 const MAIN_INVENTORY_SLOT_COUNT = 27;
+const CHEST_SLOT_COUNT = 27;
 
 interface SlotElements {
   readonly root: HTMLDivElement;
@@ -80,6 +81,9 @@ export class InventoryScreen {
   private readonly overlay: HTMLDivElement;
   private readonly gridContainer: HTMLDivElement;
   private readonly resultSlotEl: SlotElements;
+  private readonly craftingRow: HTMLDivElement;
+  private readonly chestSection: HTMLDivElement;
+  private readonly chestSlots: SlotElements[] = [];
   private readonly mainSlots: SlotElements[] = [];
   private readonly hotbarSlots: SlotElements[] = [];
   private readonly cursorEl: HTMLDivElement;
@@ -88,7 +92,7 @@ export class InventoryScreen {
   private readonly iconCache: ItemIconCache;
 
   private gridSlots: SlotElements[] = [];
-  private gridMode: InventoryScreenMode | null = null;
+  private gridMode: '2x2' | '3x3' | null = null;
 
   private session: ContainerSession | null = null;
   private _isOpen = false;
@@ -116,6 +120,26 @@ export class InventoryScreen {
     const craftingRow = document.createElement('div');
     craftingRow.className = 'inventory-screen__crafting-row';
     panel.appendChild(craftingRow);
+    this.craftingRow = craftingRow;
+
+    const chestSection = document.createElement('div');
+    chestSection.className = 'inventory-screen__chest';
+    chestSection.style.display = 'none';
+    const chestLabel = document.createElement('div');
+    chestLabel.className = 'inventory-screen__label';
+    chestLabel.textContent = 'Chest';
+    chestSection.appendChild(chestLabel);
+    const chestGrid = document.createElement('div');
+    chestGrid.className = 'inventory-screen__main-grid';
+    chestSection.appendChild(chestGrid);
+    for (let i = 0; i < CHEST_SLOT_COUNT; i += 1) {
+      const slot = buildSlotElement({ area: 'chest', index: i });
+      this.attachSlotHandler(slot);
+      chestGrid.appendChild(slot.root);
+      this.chestSlots.push(slot);
+    }
+    panel.appendChild(chestSection);
+    this.chestSection = chestSection;
 
     const gridContainer = document.createElement('div');
     gridContainer.className = 'inventory-screen__grid';
@@ -206,6 +230,11 @@ export class InventoryScreen {
   align-items: center;
   gap: ${SCREEN_STYLE.slotGapPx * 2}px;
   align-self: center;
+}
+.inventory-screen__label {
+  color: ${SCREEN_STYLE.arrowColor};
+  font-size: ${SCREEN_STYLE.labelFontPx + 2}px;
+  margin-bottom: ${SCREEN_STYLE.slotGapPx}px;
 }
 .inventory-screen__grid {
   display: grid;
@@ -307,7 +336,7 @@ export class InventoryScreen {
     this.cursorEl.style.top = `${event.clientY}px`;
   }
 
-  private rebuildGrid(mode: InventoryScreenMode): void {
+  private rebuildGrid(mode: '2x2' | '3x3'): void {
     for (const slot of this.gridSlots) {
       this.lastRenderedByRoot.delete(slot.root);
     }
@@ -348,7 +377,10 @@ export class InventoryScreen {
   open(mode: InventoryScreenMode, session: ContainerSession): void {
     this.session = session;
 
-    if (this.gridMode !== mode) {
+    const chestMode = mode === 'chest';
+    this.craftingRow.style.display = chestMode ? 'none' : 'flex';
+    this.chestSection.style.display = chestMode ? 'block' : 'none';
+    if (!chestMode && this.gridMode !== mode) {
       this.rebuildGrid(mode);
     }
 
@@ -382,6 +414,9 @@ export class InventoryScreen {
     }
 
     for (const slot of this.gridSlots) {
+      this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
+    }
+    for (const slot of this.chestSlots) {
       this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
     }
     for (const slot of this.mainSlots) {

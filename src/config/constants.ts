@@ -204,6 +204,13 @@ export const INVENTORY_CONFIG = {
   hotbarSlots: 9,
 } as const;
 
+export const CHEST_CONFIG = {
+  /** Slots per chest container. */
+  slots: 27,
+  /** Chest positions must satisfy |x|, |z| < this (see ChestStore key packing). */
+  maxHorizontalCoord: 1_048_576,
+} as const;
+
 export const TOOL_CONFIG = {
   /** Numeric tool tiers; higher tiers are strictly better (durability/speed progression). */
   tiers: {

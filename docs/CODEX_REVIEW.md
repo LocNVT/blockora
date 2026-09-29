@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation for this diff: 961 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation for this diff: 981 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
-Task:
-Phase 6 structure system — deterministic ruin placement and chunk stamping
+Task:  
+Phase 6: chest storage + ruin loot
 
-Summary:
-Structure candidates are deterministic per region, validated against terrain queries, rotated around a fixed anchor, and stamped into the generated chunk. No blocking issue found.
+Summary:  
+Chest containers, deterministic ruin loot, chest UI interaction, and chest breaking/drop behavior are implemented with focused tests. No Critical or Important issues found.
 
 Critical:
 - None
@@ -17,34 +17,43 @@ Important:
 - None
 
 Minor:
-- PROGRESS.md reports passing tests, but does not include a run result for this in-progress diff. Run the targeted structure tests and type/build checks before merging.
+- `ChestStore` rejects chest positions with |x| or |z| ≥ 1,048,576, but the world coordinate system has no corresponding horizontal bound. This is far beyond practical exploration, but chest interaction at those coordinates throws `RangeError`. Consider documenting or enforcing the world limit, or using a key representation that supports the world coordinates.
 
 Required fixes:
 - None
 
 Tests:
-- Added tests cover deterministic placement, site rejection, region boundaries, rotations, chunk-order independence, and stamping modes. I did not execute them during this review.
+- `tests/chest.test.ts` covers keying and bounds, container behavior, inventory moves, deterministic loot, structure chest placement, and breaking/drop behavior. Tests were inspected but not run during this review.
 
 Architecture:
-- Placement, terrain queries, templates, rotation, and chunk stamping are separated cleanly. Generation order is explicit.
+- Chest storage remains separate from chunk voxel data, loot generation is lazy, and chest interactions reuse existing inventory/session behavior. This fits the project architecture and roadmap scope.
 
 Performance:
-- Each chunk checks only nearby regions and small structure footprints. No clear performance risk at this scope.
+- The pure loot-table position query scans only structures intersecting one world column; chest state is allocated lazily. No material performance concern identified.
 
 Reviewed files:
-- CLAUDE.md
-- docs/ROADMAP.md
-- docs/PROGRESS.md
-- src/config/constants.ts
-- src/world/WorldGenerator.ts
-- src/world/structure/StructurePlacer.ts
-- src/world/structure/StructureTemplate.ts
-- src/world/structure/rotation.ts
-- src/world/structure/stampStructure.ts
-- src/world/structure/templates.ts
-- tests/StructurePlacer.test.ts
-- tests/structureGeneration.test.ts
-- tests/structureRotation.test.ts
+- `CLAUDE.md`
+- `docs/ROADMAP.md`
+- `docs/PROGRESS.md`
+- `src/config/constants.ts`
+- `src/entities/mobSpawning.ts`
+- `src/gameplay/blockUse.ts`
+- `src/gameplay/chestActions.ts`
+- `src/gameplay/hotbarActions.ts`
+- `src/items/ChestStore.ts`
+- `src/items/ContainerSession.ts`
+- `src/items/lootTables.ts`
+- `src/main.ts`
+- `src/ui/InventoryScreen.ts`
+- `src/util/mulberry32.ts`
+- `src/world/WorldGenerator.ts`
+- `src/world/structure/StructurePlacer.ts`
+- `src/world/structure/StructureTemplate.ts`
+- `src/world/structure/templates.ts`
+- `src/world/texture/tileArt.ts`
+- `tests/blockUse.test.ts`
+- `tests/chest.test.ts`
+- `tests/structureRotation.test.ts`
 
-Recommendation:
-Continue after running validation for this diff.
+Recommendation:  
+Continue

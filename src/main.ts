@@ -37,6 +37,7 @@ import { createEntityRaycastHit, raycastEntities } from './entities/entityRaycas
 import { resolveAttackOrBreak, performMobAttack } from './gameplay/combatActions';
 import { mobDefinition } from './entities/mobDefinitions';
 import { worldToChunkCoord } from './world/chunkCoords';
+import { BlockId } from './world/blocks';
 import { MeshBuffers, remeshChunks } from './world/mesher';
 import { applyLightAndCollectRemesh } from './world/blockEdit';
 import { LightEngine } from './world/light';
@@ -51,6 +52,8 @@ import {
 import { breakDuration, BreakProgress } from './gameplay/breakTime';
 import { EatProgress } from './gameplay/eatProgress';
 import { blockUseAction } from './gameplay/blockUse';
+import { openChestContainer, type ChestContext } from './gameplay/chestActions';
+import { ChestStore } from './items/ChestStore';
 import { playerAabb } from './player/voxelCollision';
 import { validateBlockTextures } from './world/texture/blockFaceTiles';
 import { TILE_NAMES } from './world/texture/tiles';
@@ -88,9 +91,10 @@ function applyBreak(
   hit: ReturnType<typeof createVoxelRaycastBlockHit> | null,
   tool: ReturnType<ItemRegistry['toolFor']>,
   inventory: Inventory,
+  chests: ChestContext,
 ): boolean {
   const blockDefBeforeBreak = hit !== null ? blockRegistry.get(hit.blockId) : null;
-  const change = breakAndDrop(store, blockRegistry, itemRegistry, drops, hit, Math.random, tool);
+  const change = breakAndDrop(store, blockRegistry, itemRegistry, drops, hit, Math.random, tool, chests);
   if (change === null) {
     return false;
   }
@@ -217,6 +221,15 @@ async function bootstrap(): Promise<void> {
   const inventoryScreen = new InventoryScreen(container, itemRegistry, blockRegistry);
 
   const drops = new ItemDropSystem();
+  // Chest contents live outside the chunk arrays and are not dropped on chunk
+  // unload (the world stays in memory this phase; persistence is Phase 7).
+  const chestContext: ChestContext = {
+    chests: new ChestStore(),
+    worldSeed: WORLD_GEN_CONFIG.defaultSeed,
+    lootTableAt: (x, y, z) => worldGenerator.structureLootTableAt(x, y, z),
+  };
+  /** World position of the chest whose screen is open, or null (inventory/crafting screens). */
+  let openChestPos: { x: number; y: number; z: number } | null = null;
   const itemDropRenderer = new ItemDropRenderer(scene, itemRegistry, blockRegistry);
   const isColumnLoaded = (wx: number, wz: number): boolean => {
     const { cx, cz } = worldToChunkCoord(wx, wz);
@@ -261,7 +274,16 @@ async function bootstrap(): Promise<void> {
     inventoryScreen.open(mode, session);
   }
 
+  function openChestScreen(x: number, y: number, z: number): void {
+    const container = openChestContainer(chestContext, x, y, z);
+    const session = new ContainerSession(inventory, craftingGrid2x2, undefined, undefined, container);
+    document.exitPointerLock();
+    openChestPos = { x, y, z };
+    inventoryScreen.open('chest', session);
+  }
+
   function closeInventoryScreen(): void {
+    openChestPos = null;
     inventoryScreen.close(dropLeftoverAtEye);
     // Keydown is a user gesture, so re-requesting the lock here is allowed;
     // if it's refused (e.g. focus was lost) the "Click to play" hint simply
@@ -284,6 +306,7 @@ async function bootstrap(): Promise<void> {
   let deathHandled = false;
   function handleDeath(): void {
     deathHandled = true;
+    openChestPos = null;
     document.exitPointerLock();
     if (inventoryScreen.isOpen) {
       inventoryScreen.close(dropLeftoverAtEye);
@@ -394,6 +417,14 @@ async function bootstrap(): Promise<void> {
       closeInventoryScreen();
     }
 
+    // A chest screen must not outlive its block (broken or its chunk unloaded).
+    if (
+      openChestPos !== null &&
+      chunkStore.getBlock(openChestPos.x, openChestPos.y, openChestPos.z) !== BlockId.Chest
+    ) {
+      closeInventoryScreen();
+    }
+
     // Hint hidden while any overlay (inventory, death screen) owns the screen.
     hint.setLocked(input.isLocked() || inventoryScreen.isOpen || playerHealth.isDead);
 
@@ -446,10 +477,14 @@ async function bootstrap(): Promise<void> {
         }
       }
 
-      if (useAction === 'crafting_table') {
-        // Crafting-table use wins on the press frame even if a food item is
-        // selected: RMB opens the table instead of taking a bite.
-        openInventoryScreen('3x3');
+      if (useAction !== null && hit !== null) {
+        // Block use wins on the press frame even if a food item is selected:
+        // RMB opens the screen instead of taking a bite or placing a block.
+        if (useAction === 'crafting_table') {
+          openInventoryScreen('3x3');
+        } else {
+          openChestScreen(hit.x, hit.y, hit.z);
+        }
         breakProgress.update(null, false, dt, 0);
         eatProgress.update(null, false, false, dt);
         crosshair.setProgress(0);
@@ -491,6 +526,7 @@ async function bootstrap(): Promise<void> {
             hit,
             tool,
             inventory,
+            chestContext,
           );
         } else if (actions.placePressed && selectedFood === undefined && !attacking) {
           edited = applyPlace(

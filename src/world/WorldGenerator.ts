@@ -145,6 +145,11 @@ export class WorldGenerator {
     return new Chunk(cx, cz, blocks);
   }
 
+  /** Loot table id of the structure chest at world block (x, y, z), or null (pure seed query; see StructurePlacer.lootTableAt). */
+  structureLootTableAt(x: number, y: number, z: number): string | null {
+    return this.structurePlacer.lootTableAt(x, y, z);
+  }
+
   /** Structures whose footprint lies within STRUCTURE_QUERY_PADDING of chunk (cx, cz). */
   private structuresNearChunk(cx: number, cz: number): PlacedStructure[] {
     const minX = cx * chunkWidth - STRUCTURE_QUERY_PADDING;

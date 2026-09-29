@@ -1,6 +1,7 @@
 import { latticeHash2D } from '../noise/valueNoise2D';
 import type { BiomeDefinition } from '../biome/Biome';
 import { STRUCTURE_TEMPLATES } from './templates';
+import { structureBlockWorldPosition } from './stampStructure';
 import type { StructureTemplate } from './StructureTemplate';
 import { horizontalReach, rotatedExtent, toRotation, type Rotation } from './rotation';
 import { STRUCTURE_CONFIG, WORLD_CONFIG } from '../../config/constants';
@@ -210,6 +211,26 @@ export class StructurePlacer {
       }
     }
     return found;
+  }
+
+  /**
+   * Loot table id of the structure chest at exactly (x, y, z), or null when no
+   * structure places a loot container there. Pure seed query (no chunk data,
+   * no generation-time state), so it answers the same however chunks loaded.
+   */
+  lootTableAt(x: number, y: number, z: number): string | null {
+    for (const structure of this.structuresIntersecting(x, z, x, z)) {
+      for (const block of structure.template.blocks) {
+        if (block.lootTable === undefined) {
+          continue;
+        }
+        const world = structureBlockWorldPosition(structure, block);
+        if (world.x === x && world.y === y && world.z === z) {
+          return block.lootTable;
+        }
+      }
+    }
+    return null;
   }
 }
 

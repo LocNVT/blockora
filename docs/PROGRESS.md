@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 6: chest storage + ruin loot.
+Phase 6: dungeon structure.
 
 ---
 
@@ -103,7 +103,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * [ ] Village
 * [x] Ruins
 * [ ] Dungeon
-* [ ] Loot
+* [x] Loot
 
 ---
 
@@ -167,8 +167,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
-* Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); one template (ruin); floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes. Chests are placeable but have no storage yet.
-* `mulberry32` is duplicated in `src/entities/mobSpawning.ts` and `src/world/texture/tileArt.ts`.
+* Chests: contents are memory-only (lost on reload, Phase 7); player-placed chest blocks vanish when their chunk unloads (block edits aren't kept yet) but the container stays, so a new chest placed there gets the old contents back; `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); one template (ruin); floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
 * `requiresTool` is tier-agnostic (any pickaxe harvests stone/ores); add `minTier` when iron tools exist.
@@ -248,6 +248,12 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-29 — Phase 6 chest storage + ruin loot
+
+* `src/items/ChestStore.ts`: 27-slot containers (existing `Inventory` rules) keyed by a packed numeric world position, kept outside chunk voxel data, survives chunk unload. RMB opens a chest screen (`InventoryScreen` 'chest' mode, `ContainerSession` 'chest' area); breaking a chest spills its contents; the screen closes if the chest block disappears.
+* Loot: data-driven `LOOT_TABLES` (`ruin_chest`: 3–5 weighted rolls of apple, raw pork, coal, torch, planks, stick, iron ore, wooden / stone tools). Ruin template has one chest; `StructurePlacer.lootTableAt` is a pure seed query, loot is rolled lazily on first open / break, never refills, player-placed chests stay empty.
+* One shared `src/util/mulberry32.ts` (was duplicated). Verified in real Chrome (temporary teleport hook, removed). Codex review PASS_WITH_NOTES (first round).
 
 ## 2026-09-29 — Phase 6 structure system + ruin
 
@@ -502,11 +508,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (56 files, 961 tests)
+pnpm test → PASS (57 files, 981 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 6 loot: chest storage (per-block container data keyed by world position in a ChunkStore-side map, 27 slots, reusing Inventory / ItemStack logic; RMB opens a chest screen reusing the inventory UI; breaking a chest drops its contents), then ruins place a chest whose contents are filled deterministically from a data-driven loot table (seed + structure position), filled lazily on first open so generation stays pure.
+Phase 6 dungeon: underground stone-brick-like room template (existing blocks: cobblestone / stone / gravel) placed by the structure system below the surface (new placement mode: fixed depth range under the footprint's lowest surface, only in solid stone, never breaching the surface or water), with 1–2 loot chests (`dungeon_chest` table, richer than ruins) and a dark interior so shamblers spawn there; then Village.
