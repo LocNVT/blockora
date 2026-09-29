@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 8: `glDrawElements` warning + mesh disposal audit.
+Phase 8: pooled chunk geometries (bounded VAOs on WebGL2).
 
 ---
 
@@ -169,7 +169,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
-* Startup: ~180–210 ms first-frame long task remains (first-use GL driver work; software GPU) plus ~130 ms module-eval task (atlas data-URL generation could be lazy / off-thread); mob / item-drop materials not confirmed precompiled (none on screen at startup). Pre-existing WebGL warning `GL_INVALID_OPERATION: glDrawElements: Must have element array buffer bound` on every run (A/B-checked: not caused by the precompile) — likely an empty indexed / instanced mesh being drawn; investigate.
+* WebGL2 fallback: three r186's WebGL backend never evicts VAOs (`vaoCache`), so each disposed chunk geometry leaves a VAO + buffer wrappers (≈ 744 VAOs after two 200-block round trips) — slow GPU memory growth on WebGL2 only (WebGPU has no VAOs); fixing needs three internals or pooled chunk geometries. Chunks with both sections now use 2 geometries (F3 count higher, draw calls unchanged). One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
+* Startup: ~180–210 ms first-frame long task remains (first-use GL driver work; software GPU) plus ~130 ms module-eval task (atlas data-URL generation could be lazy / off-thread); mob / item-drop materials not confirmed precompiled (none on screen at startup).
 * Streaming: new rows appear one chunk later (meshed once ring neighbours load); block-edit remeshes bypass ChunkManager's mesh bookkeeping (harmless in practice — edits are within 6 blocks); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
 * Profiling: mesh upload (`sink.upsert`) isn't timed separately (only visible in frame time); frame time includes vsync wait; headless numbers are software-GPU.
 * Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
@@ -253,6 +254,11 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 GL warning + chunk mesh disposal leak
+
+* GL warning `glDrawElements: Must have element array buffer bound` — cause: each chunk was one `Mesh` with opaque + transparent material groups (two draws on the same VAO / index buffer); an index-buffer upload between the two draws unbinds the element buffer from the bound VAO while three r186's WebGL state cache still thinks it's bound, so the second group drew with no element buffer (captured via GL call logging: 1 bad draw in ~9 800). Fix: one geometry + one `Mesh` per non-empty section (opaque / transparent), no groups (`createSectionGeometry` / `createChunkGeometries`); same materials and draw count. Warning gone in 3 runs.
+* Leak: `ChunkMeshRenderer` disposed geometries but never the `Mesh`, and three r186 keeps a strong `RenderObject` (with the geometry's CPU arrays) until the Object3D `dispose` event → every unloaded chunk leaked. Removal / replacement now does `scene.remove` → `mesh.dispose()` → `geometry.dispose()`. Heap after two 200-block round trips 147 → 79 MB (heap snapshot); geometries return to a fixed plateau; textures constant at 4. Mob / item-drop / outline / inventory / death / debug paths audited: no leaks. Codex review PASS (first round).
 
 ## 2026-09-30 — Phase 8 startup stall diagnosis + precompile
 
@@ -563,11 +569,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (70 files, 1136 tests)
+pnpm test → PASS (70 files, 1142 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 8: find and fix the `GL_INVALID_OPERATION: glDrawElements` warning (empty indexed / instanced draw), then mesh disposal audit (geometry / material counts stay flat while walking back and forth) and a frustum-culling check (chunk mesh bounding spheres). Greedy meshing after real-hardware numbers.
+Phase 8: pooled / reused chunk geometries (bounded VAO + buffer count on the WebGL2 fallback; reuse buffers sized by capacity instead of creating one per remesh), then frustum-culling check. Greedy meshing after real-hardware numbers.

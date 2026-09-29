@@ -14,7 +14,7 @@ import {
   uv,
   vec4,
 } from 'three/tsl';
-import type { ChunkMeshData } from '../world/mesher/MeshBuffers';
+import type { ChunkMeshData, MeshSectionData } from '../world/mesher/MeshBuffers';
 import { isSectionEmpty } from '../world/mesher/MeshBuffers';
 import type { ChunkMeshSink } from '../world/mesher/remesh';
 import { LIGHT_COMPONENTS } from '../world/mesher/MeshBuffers';
@@ -27,9 +27,6 @@ import { applyAtlasUvs } from '../world/texture/applyAtlasUvs';
 import { generateAtlasPixels } from '../world/texture/tileArt';
 import { TILE_NAMES } from '../world/texture/tiles';
 import { createVoxelAtlasTexture } from './voxelAtlasTexture';
-
-const OPAQUE_MATERIAL_INDEX = 0;
-const TRANSPARENT_MATERIAL_INDEX = 1;
 
 /** Shared atlas layout + texture, built once from the data-driven tile list. */
 export const voxelAtlasLayout: AtlasLayout = createAtlasLayout(TILE_NAMES.length);
@@ -101,12 +98,6 @@ export const chunkTransparentMaterial = new MeshBasicNodeMaterial({
 });
 chunkTransparentMaterial.colorNode = createChunkColorNode();
 
-/** The fixed [opaque, transparent] material array every chunk mesh uses via geometry groups. */
-export const chunkMaterials: readonly THREE.Material[] = [
-  chunkOpaqueMaterial,
-  chunkTransparentMaterial,
-];
-
 /** Disposes the shared atlas texture and materials. Call only at full teardown (e.g. HMR/tests). */
 export function disposeSharedVoxelResources(): void {
   chunkOpaqueMaterial.dispose();
@@ -120,123 +111,90 @@ const UV_ITEM_SIZE = 2;
 /** Int8 normal components are normalized (-1/1 -> -1.0/1.0) by `normalized: true` below. */
 const NORMALIZED_NORMALS = true;
 
-/** Concatenates two typed arrays of the same kind into a new one without intermediate JS arrays. */
-function concatTyped<T extends Float32Array | Int8Array | Uint8Array | Uint32Array>(
-  a: T,
-  b: T,
-  create: (length: number) => T,
-): T {
-  const out = create(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-/** Concatenates index buffers, offsetting the second by `offset` vertices. */
-function concatIndices(a: Uint32Array, b: Uint32Array, offset: number): Uint32Array {
-  const out = new Uint32Array(a.length + b.length);
-  out.set(a, 0);
-  for (let i = 0; i < b.length; i += 1) {
-    out[a.length + i] = (b[i] ?? 0) + offset;
-  }
-  return out;
-}
-
 /**
- * Builds one BufferGeometry per chunk by concatenating the opaque and
- * transparent sections into shared attribute buffers, with two geometry
- * groups pointing at material indices [0] (opaque) and [1] (transparent).
- * Returns null when the chunk produced no geometry at all.
+ * Builds a BufferGeometry from one mesh section (opaque or transparent), or
+ * null when the section has no faces.
+ *
+ * Each section gets its OWN geometry (and therefore its own mesh) instead of
+ * one geometry with two material groups: three r186's WebGL backend caches
+ * the bound VAO + index buffer between draws, but uploading any new index
+ * buffer mid-frame unbinds the element buffer from the currently bound VAO.
+ * Two consecutive draws of the same geometry (its two groups) then skip the
+ * rebind and hit "glDrawElements: Must have element array buffer bound".
+ * One draw per geometry can never repeat the cached (VAO, index) pair.
  */
-export function createChunkGeometry(data: ChunkMeshData): THREE.BufferGeometry | null {
-  const opaqueEmpty = isSectionEmpty(data.opaque);
-  const transparentEmpty = isSectionEmpty(data.transparent);
-  if (opaqueEmpty && transparentEmpty) {
+export function createSectionGeometry(section: MeshSectionData): THREE.BufferGeometry | null {
+  if (isSectionEmpty(section)) {
     return null;
   }
-
-  const { opaque, transparent } = data;
-  const opaqueVertexCount = opaque.positions.length / POSITION_ITEM_SIZE;
-  const f32 = (length: number): Float32Array => new Float32Array(length);
-
-  const opaqueAtlasUv = applyAtlasUvs(opaque.uvs, opaque.tiles, voxelAtlasLayout);
-  const transparentAtlasUv = applyAtlasUvs(transparent.uvs, transparent.tiles, voxelAtlasLayout);
+  const atlasUv = applyAtlasUvs(section.uvs, section.tiles, voxelAtlasLayout);
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new THREE.BufferAttribute(concatTyped(opaque.positions, transparent.positions, f32), POSITION_ITEM_SIZE),
-  );
+  geometry.setAttribute('position', new THREE.BufferAttribute(section.positions, POSITION_ITEM_SIZE));
   geometry.setAttribute(
     'normal',
-    new THREE.BufferAttribute(
-      concatTyped(opaque.normals, transparent.normals, (length) => new Int8Array(length)),
-      NORMAL_ITEM_SIZE,
-      NORMALIZED_NORMALS,
-    ),
+    new THREE.BufferAttribute(section.normals, NORMAL_ITEM_SIZE, NORMALIZED_NORMALS),
   );
-  geometry.setAttribute(
-    'uv',
-    new THREE.BufferAttribute(concatTyped(opaqueAtlasUv, transparentAtlasUv, f32), UV_ITEM_SIZE),
-  );
+  geometry.setAttribute('uv', new THREE.BufferAttribute(atlasUv, UV_ITEM_SIZE));
   geometry.setAttribute(
     CHUNK_LIGHT_ATTRIBUTE,
-    new THREE.BufferAttribute(
-      concatTyped(opaque.light, transparent.light, (length) => new Uint8Array(length)),
-      LIGHT_COMPONENTS,
-      true,
-    ),
+    new THREE.BufferAttribute(section.light, LIGHT_COMPONENTS, true),
   );
-  geometry.setIndex(
-    new THREE.BufferAttribute(concatIndices(opaque.indices, transparent.indices, opaqueVertexCount), 1),
-  );
-
-  const opaqueIndexCount = data.opaque.indices.length;
-  const transparentIndexCount = data.transparent.indices.length;
-
-  if (!opaqueEmpty) {
-    geometry.addGroup(0, opaqueIndexCount, OPAQUE_MATERIAL_INDEX);
-  }
-  if (!transparentEmpty) {
-    geometry.addGroup(opaqueIndexCount, transparentIndexCount, TRANSPARENT_MATERIAL_INDEX);
-  }
-
+  geometry.setIndex(new THREE.BufferAttribute(section.indices, 1));
   return geometry;
 }
 
+/** Per-section geometries of one chunk; a section with no faces is null (never an empty geometry). */
+export interface ChunkGeometries {
+  readonly opaque: THREE.BufferGeometry | null;
+  readonly transparent: THREE.BufferGeometry | null;
+}
+
+/** Builds the opaque and transparent geometries of a chunk (either may be null). */
+export function createChunkGeometries(data: ChunkMeshData): ChunkGeometries {
+  return {
+    opaque: createSectionGeometry(data.opaque),
+    transparent: createSectionGeometry(data.transparent),
+  };
+}
+
 /**
- * Owns one THREE.Mesh per chunk column, keyed by chunk coordinate. Meshes
- * are positioned at the chunk's world origin (mesh data is chunk-local) and
- * share the module-level [opaque, transparent] materials via geometry groups.
+ * Owns up to two THREE.Mesh per chunk column (opaque + transparent, each with
+ * its own geometry), keyed by chunk coordinate. Meshes are positioned at the
+ * chunk's world origin (mesh data is chunk-local) and use the shared
+ * module-level materials.
  */
 export class ChunkMeshRenderer implements ChunkMeshSink {
   private readonly scene: THREE.Scene;
-  private readonly meshes = new Map<string, THREE.Mesh>();
+  private readonly meshes = new Map<string, THREE.Mesh[]>();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
   }
 
-  /** Creates or replaces the mesh for chunk (cx, cz); removes it entirely when data is empty. */
+  /** Creates or replaces the meshes for chunk (cx, cz); removes them entirely when data is empty. */
   upsert(cx: number, cz: number, data: ChunkMeshData): void {
     const key = chunkKey(cx, cz);
-    const geometry = createChunkGeometry(data);
+    const { opaque, transparent } = createChunkGeometries(data);
+    this.remove(cx, cz);
 
-    const existing = this.meshes.get(key);
-    if (existing !== undefined) {
-      existing.geometry.dispose();
-      this.scene.remove(existing);
-      this.meshes.delete(key);
+    const created: THREE.Mesh[] = [];
+    if (opaque !== null) {
+      created.push(this.createMesh(cx, cz, opaque, chunkOpaqueMaterial));
     }
-
-    if (geometry === null) {
-      return;
+    if (transparent !== null) {
+      created.push(this.createMesh(cx, cz, transparent, chunkTransparentMaterial));
     }
+    if (created.length > 0) {
+      this.meshes.set(key, created);
+    }
+  }
 
-    const mesh = new THREE.Mesh(geometry, chunkMaterials as THREE.Material[]);
+  private createMesh(cx: number, cz: number, geometry: THREE.BufferGeometry, material: THREE.Material): THREE.Mesh {
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(cx * WORLD_CONFIG.chunkWidth, 0, cz * WORLD_CONFIG.chunkDepth);
     this.scene.add(mesh);
-    this.meshes.set(key, mesh);
+    return mesh;
   }
 
   remove(cx: number, cz: number): void {
@@ -245,17 +203,26 @@ export class ChunkMeshRenderer implements ChunkMeshSink {
     if (existing === undefined) {
       return;
     }
-    existing.geometry.dispose();
-    this.scene.remove(existing);
+    this.disposeMeshes(existing);
     this.meshes.delete(key);
   }
 
   /** Disposes every chunk mesh's geometry and removes it from the scene. Shared materials survive. */
   dispose(): void {
-    for (const mesh of this.meshes.values()) {
-      mesh.geometry.dispose();
-      this.scene.remove(mesh);
+    for (const meshes of this.meshes.values()) {
+      this.disposeMeshes(meshes);
     }
     this.meshes.clear();
+  }
+
+  private disposeMeshes(meshes: readonly THREE.Mesh[]): void {
+    for (const mesh of meshes) {
+      this.scene.remove(mesh);
+      // Object3D 'dispose' makes the renderer drop its per-mesh RenderObject.
+      // Without it three r186 keeps every removed chunk mesh (geometry,
+      // attribute arrays, pipeline/bindings) alive in RenderObjects forever.
+      mesh.dispose();
+      mesh.geometry.dispose();
+    }
   }
 }

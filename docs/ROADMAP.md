@@ -227,7 +227,7 @@ Close browser → reopen → world state remains.
 * [ ] Greedy meshing
 * [x] Chunk prioritization
 * [ ] Chunk cache
-* [ ] Mesh disposal
+* [x] Mesh disposal
 * [ ] Object pooling
 * [ ] Frustum culling
 * [ ] Chunk culling
