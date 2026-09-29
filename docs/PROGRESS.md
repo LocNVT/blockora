@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-**Phase 7 — Persistence**
+**Phase 8 — Performance**
 
 ## Current Task
 
-Phase 7: save format + IndexedDB layer (not started).
+Phase 8: measurement / debug overlay (not started).
 
 ---
 
@@ -109,12 +109,12 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 # Phase 7
 
-* [ ] IndexedDB
-* [ ] World save
-* [ ] World load
-* [ ] Player persistence
-* [ ] Modified chunk persistence
-* [ ] Save versioning
+* [x] IndexedDB
+* [x] World save
+* [x] World load
+* [x] Player persistence
+* [x] Modified chunk persistence
+* [x] Save versioning
 
 ---
 
@@ -167,7 +167,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
-* Chests: contents are memory-only (lost on reload, Phase 7); player-placed chest blocks vanish when their chunk unloads (block edits aren't kept yet) but the container stays, so a new chest placed there gets the old contents back; `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
 * Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
 * Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
@@ -249,6 +250,15 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 7 persistence (save format + IndexedDB) — Phase 7 complete
+
+* `src/world/BlockEditStore.ts`: sparse per-chunk diff (local index → block id) of player edits vs generated terrain, recorded at the single commit path in main.ts (`commitBlockChange`), applied by ChunkManager right after `generateChunk` before lighting / meshing → edits survive chunk unload (fixes the old known issue). Reverting to the generated block drops the entry; per-chunk dirty tracking.
+* `src/save/saveFormat.ts`: `SAVE_FORMAT_VERSION = 1`, `migrate()` + `MIGRATIONS` table, sections meta / player (incl. inventory as Uint16 ids / Uint8 counts / Uint16 damage) / chests (Int32 positions, concatenated slots, initialised set) / chunk edits (Uint16 indices + Uint8 blocks); full validation → `SaveFormatError` / `SaveVersionError`.
+* `src/save/IndexedDbSaveStore.ts`: DB `blockora` v1, stores meta / player / chests / chunkEdits (`"cx,cz"`), one all-or-nothing readwrite transaction per save, only dirty chunks written. Unavailable / blocked / timeout → game runs without saving (one warning).
+* `SaveScheduler` + `WorldSaver`: autosave every 10 s when changed, flush on `visibilitychange` hidden and `pagehide`, one save in flight. Load before world build: saved seed, edits, player, health / hunger, inventory, chests, time. `SAVE_CONFIG`.
+* Fix (Codex review FAIL): a save that couldn't be read (newer version, invalid, read error) fell back to a new world whose next save overwrote it. `loadSave` now returns loaded / empty / blocked, and `createWorldSaver` disables saving when blocked. Regression tests. Codex re-review PASS_WITH_NOTES.
+* Verified in real Chrome with a persistent profile: close → relaunch restored position, look, health 17, hunger 17, all 36 slots, broken / placed blocks, chest contents and time of day; ChunkManager unload / reload kept edits.
 
 ## 2026-09-30 — Phase 6 village (Phase 6 complete)
 
@@ -523,11 +533,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (59 files, 1030 tests)
+pnpm test → PASS (63 files, 1069 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 7 persistence, first slice: versioned save format + IndexedDB layer (`src/save/`): world metadata (seed, version, time of day), player (position, rotation, health, hunger, inventory), modified blocks per chunk (sparse diff vs the seed-generated chunk, TypedArray-encoded), chest contents; save on interval + `visibilitychange` / `pagehide`; load on startup applies metadata + player, and chunk diffs are applied when a chunk is generated. Also keep player block edits across chunk unload (in-memory diff store is the same structure that gets persisted).
+Phase 8 performance, measure first: F3 debug overlay (FPS, frame time, draw calls, triangles, geometry / texture counts, JS heap where available, loaded chunks, chunk gen / mesh time averages, mob count) from `renderer.info` + existing timing logs; then profile chunk streaming on the main thread and decide the Web Worker plan (CLAUDE.md §16) from the numbers.

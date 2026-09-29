@@ -190,17 +190,17 @@ Structures generate consistently from the world seed.
 
 ---
 
-# Phase 7 — Persistence
+# Phase 7 — Persistence ✅ (completed 2026-09-30)
 
-* [ ] IndexedDB
-* [ ] World metadata
-* [ ] Player save
-* [ ] Inventory save
-* [ ] Modified blocks
-* [ ] Chunk save
-* [ ] Chunk load
-* [ ] Save versioning
-* [ ] Migration strategy
+* [x] IndexedDB
+* [x] World metadata
+* [x] Player save
+* [x] Inventory save
+* [x] Modified blocks
+* [x] Chunk save
+* [x] Chunk load
+* [x] Save versioning
+* [x] Migration strategy
 
 ### Exit criteria
 

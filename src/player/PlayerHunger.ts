@@ -67,6 +67,12 @@ export class PlayerHunger {
     return this._hunger > SURVIVAL_CONFIG.sprintMinHunger;
   }
 
+  /** Sets hunger (clamped to 0..maxHunger, whole points) and exhaustion (>= 0) from a save. */
+  restore(hunger: number, exhaustion: number): void {
+    this._hunger = Math.max(0, Math.min(this.maxHunger, Math.floor(hunger)));
+    this._exhaustion = Math.max(0, exhaustion);
+  }
+
   /** Restores full hunger and clears the exhaustion accumulator (respawn). */
   reset(): void {
     this._hunger = this.maxHunger;

@@ -249,6 +249,17 @@ export const CHEST_CONFIG = {
   maxHorizontalCoord: 1_048_576,
 } as const;
 
+export const SAVE_CONFIG = {
+  /** IndexedDB database holding the single world save. */
+  databaseName: 'blockora',
+  /** IndexedDB schema version (object stores); independent of the save format version. */
+  databaseVersion: 1,
+  /** Seconds between autosave checks; a save is written only when something changed. */
+  autosaveIntervalSeconds: 10,
+  /** Give up opening IndexedDB after this long (ms) and run without saving. */
+  openTimeoutMs: 3000,
+} as const;
+
 export const TOOL_CONFIG = {
   /** Numeric tool tiers; higher tiers are strictly better (durability/speed progression). */
   tiers: {

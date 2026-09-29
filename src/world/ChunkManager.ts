@@ -6,6 +6,7 @@ import { remeshChunks } from './mesher/remesh';
 import { MeshBuffers } from './mesher/MeshBuffers';
 import { chunkKey, type ChunkCoord } from './chunkCoords';
 import { LightEngine } from './light/LightEngine';
+import type { BlockEditStore } from './BlockEditStore';
 
 /** Cumulative load timings (ms) since construction, for startup/perf logging. */
 export interface ChunkLoadStats {
@@ -58,6 +59,10 @@ function axisNeighbors({ cx, cz }: ChunkCoord): ChunkCoord[] {
  * still unloaded would have face-culled its boundary against Air (see
  * BlockSampler) and needs to redraw that seam now that real data exists.
  *
+ * When a `BlockEditStore` is given, the player's recorded edits for a chunk
+ * are applied to the freshly generated blocks (initial load or reload after
+ * unload) before lighting and meshing, so both reflect the edited world.
+ *
  * Each generated chunk is lit (LightEngine.lightChunk) before meshing; light
  * that flowed into already-loaded chunks (including diagonals) remeshes them
  * too.
@@ -76,6 +81,7 @@ export class ChunkManager {
   private readonly maxLoadsPerUpdate: number;
   private readonly meshBuffers = new MeshBuffers();
   private readonly light: LightEngine;
+  private readonly edits: BlockEditStore | undefined;
 
   private chunksLoaded = 0;
   private generationMs = 0;
@@ -92,6 +98,7 @@ export class ChunkManager {
     radius: number,
     maxLoadsPerUpdate = 4,
     light: LightEngine = new LightEngine(store, registry),
+    edits?: BlockEditStore,
   ) {
     this.store = store;
     this.generator = generator;
@@ -100,6 +107,7 @@ export class ChunkManager {
     this.radius = radius;
     this.maxLoadsPerUpdate = maxLoadsPerUpdate;
     this.light = light;
+    this.edits = edits;
   }
 
   get stats(): ChunkLoadStats {
@@ -173,7 +181,9 @@ export class ChunkManager {
       }
 
       const generationStart = performance.now();
-      this.store.setChunk(this.generator.generateChunk(coord.cx, coord.cz));
+      const chunk = this.generator.generateChunk(coord.cx, coord.cz);
+      this.edits?.applyTo(chunk);
+      this.store.setChunk(chunk);
       const lightStart = performance.now();
       const lightChanged = this.light.lightChunk(coord.cx, coord.cz);
       const lightEnd = performance.now();

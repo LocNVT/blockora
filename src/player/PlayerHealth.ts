@@ -81,6 +81,16 @@ export class PlayerHealth {
     }
   }
 
+  /**
+   * Sets health from a save (clamped to 0..maxHealth, rounded down to whole
+   * points). Health 0 restores the dead state; invulnerability is cleared.
+   */
+  restore(health: number): void {
+    this._health = Math.max(0, Math.min(this.maxHealth, Math.floor(health)));
+    this._isDead = this._health <= 0;
+    this.invulnerabilityRemaining = 0;
+  }
+
   /** Restores full health and clears death/invulnerability state (respawn). */
   reset(): void {
     this._health = this.maxHealth;
