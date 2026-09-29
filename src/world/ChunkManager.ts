@@ -7,6 +7,7 @@ import { MeshBuffers } from './mesher/MeshBuffers';
 import { chunkKey, type ChunkCoord } from './chunkCoords';
 import { LightEngine } from './light/LightEngine';
 import type { BlockEditStore } from './BlockEditStore';
+import type { PerfProbe } from '../debug/PerfStats';
 
 /** Cumulative load timings (ms) since construction, for startup/perf logging. */
 export interface ChunkLoadStats {
@@ -82,6 +83,7 @@ export class ChunkManager {
   private readonly meshBuffers = new MeshBuffers();
   private readonly light: LightEngine;
   private readonly edits: BlockEditStore | undefined;
+  private readonly probe: PerfProbe | undefined;
 
   private chunksLoaded = 0;
   private generationMs = 0;
@@ -99,6 +101,7 @@ export class ChunkManager {
     maxLoadsPerUpdate = 4,
     light: LightEngine = new LightEngine(store, registry),
     edits?: BlockEditStore,
+    probe?: PerfProbe,
   ) {
     this.store = store;
     this.generator = generator;
@@ -108,6 +111,12 @@ export class ChunkManager {
     this.maxLoadsPerUpdate = maxLoadsPerUpdate;
     this.light = light;
     this.edits = edits;
+    this.probe = probe;
+  }
+
+  /** Clock for load timings: the probe's (injectable) clock when present. */
+  private now(): number {
+    return this.probe !== undefined ? this.probe.now() : performance.now();
   }
 
   get stats(): ChunkLoadStats {
@@ -180,15 +189,17 @@ export class ChunkManager {
         continue;
       }
 
-      const generationStart = performance.now();
+      const generationStart = this.now();
       const chunk = this.generator.generateChunk(coord.cx, coord.cz);
       this.edits?.applyTo(chunk);
       this.store.setChunk(chunk);
-      const lightStart = performance.now();
+      const lightStart = this.now();
       const lightChanged = this.light.lightChunk(coord.cx, coord.cz);
-      const lightEnd = performance.now();
+      const lightEnd = this.now();
       this.generationMs += lightStart - generationStart;
       this.lightMs += lightEnd - lightStart;
+      this.probe?.recordChunkGeneration(lightStart - generationStart);
+      this.probe?.recordLight(lightEnd - lightStart);
       this.chunksLoaded += 1;
       loadsRemaining -= 1;
 
@@ -212,6 +223,7 @@ export class ChunkManager {
         this.sink,
         Array.from(neighborsToRemesh.values()),
         this.meshBuffers,
+        this.probe,
       );
     }
   }

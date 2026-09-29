@@ -4,6 +4,7 @@ import { chunkKey, type ChunkCoord } from '../chunkCoords';
 import { MeshBuffers, type ChunkMeshData } from './MeshBuffers';
 import { meshChunk } from './meshChunk';
 import { neighborhoodFromStore } from './BlockSampler';
+import type { PerfProbe } from '../../debug/PerfStats';
 import { createLightSampler, lightNeighborhoodFromStore } from '../light/LightSampler';
 
 /** Minimal sink a remesh target must satisfy; ChunkMeshRenderer implements this shape. */
@@ -22,6 +23,9 @@ export interface ChunkMeshSink {
  * avoiding per-chunk typed-array reallocation; a fresh MeshBuffers is created
  * otherwise.
  *
+ * When a `probe` is given, each chunk's mesh generation time (neighbourhood
+ * gather + `meshChunk`; excludes the sink upload) is recorded through it.
+ *
  * Returns the chunk keys actually remeshed, in the order they were processed
  * (useful for tests/logging).
  */
@@ -31,6 +35,7 @@ export function remeshChunks(
   sink: ChunkMeshSink,
   coords: readonly ChunkCoord[],
   buffers: MeshBuffers = new MeshBuffers(),
+  probe?: Pick<PerfProbe, 'now' | 'recordMesh'>,
 ): string[] {
   const seen = new Set<string>();
   const remeshed: string[] = [];
@@ -46,9 +51,11 @@ export function remeshChunks(
       continue;
     }
 
+    const meshStart = probe?.now() ?? 0;
     const neighborhood = neighborhoodFromStore(store, cx, cz);
     const lightSampler = createLightSampler(lightNeighborhoodFromStore(store, cx, cz));
     const data = meshChunk(neighborhood, registry, buffers, undefined, lightSampler);
+    probe?.recordMesh((probe.now()) - meshStart);
     sink.upsert(cx, cz, data);
     remeshed.push(key);
   }

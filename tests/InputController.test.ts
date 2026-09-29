@@ -339,9 +339,9 @@ describe('InputController: inventory toggle/close (UI input)', () => {
     expect(controller.isLocked()).toBe(true);
 
     doc.dispatchEvent(keyDownEvent('KeyE'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false, toggleDebug: false });
     // Consumed once: next read is false until pressed again.
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false, toggleDebug: false });
   });
 
   it('KeyE toggles while unlocked', () => {
@@ -349,28 +349,28 @@ describe('InputController: inventory toggle/close (UI input)', () => {
     expect(controller.isLocked()).toBe(false);
 
     doc.dispatchEvent(keyDownEvent('KeyE'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false });
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false, toggleDebug: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false, toggleDebug: false });
   });
 
   it('holding KeyE (repeated keydown without keyup) does not repeat the toggle', () => {
     unlock();
     doc.dispatchEvent(keyDownEvent('KeyE'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: true, close: false, toggleDebug: false });
     doc.dispatchEvent(keyDownEvent('KeyE'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false, toggleDebug: false });
   });
 
   it('Escape sets close latch only while unlocked', () => {
     unlock();
     doc.dispatchEvent(keyDownEvent('Escape'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: true });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: true, toggleDebug: false });
   });
 
   it('Escape is ignored while locked', () => {
     lock();
     doc.dispatchEvent(keyDownEvent('Escape'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false, toggleDebug: false });
   });
 
   it('movement/look/action latches stay ignored while unlocked (existing behaviour)', () => {
@@ -387,6 +387,6 @@ describe('InputController: inventory toggle/close (UI input)', () => {
   it('dispose removes listeners: no UI input recorded after dispose', () => {
     controller.dispose();
     doc.dispatchEvent(keyDownEvent('KeyE'));
-    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false });
+    expect(controller.consumeUiInput()).toEqual({ toggleInventory: false, close: false, toggleDebug: false });
   });
 });

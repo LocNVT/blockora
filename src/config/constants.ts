@@ -495,3 +495,15 @@ export const ITEM_DROP_CONFIG = {
   /** Visual bob speed (radians/s). */
   bobSpeed: 2.4,
 } as const;
+
+/** F3 debug overlay / profiling (measure-only; no gameplay effect). */
+export const DEBUG_CONFIG = {
+  /** Frames kept in the rolling FPS / frame-time window. */
+  frameWindow: 120,
+  /** Samples kept in the rolling chunk-generation / light / mesh time windows. */
+  sampleWindow: 64,
+  /** Overlay refresh rate (Hz); text is rebuilt this often, not every frame. */
+  overlayUpdateHz: 4,
+  /** Length (ms) of the per-second counter buckets. */
+  counterPeriodMs: 1000,
+} as const;

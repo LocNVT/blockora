@@ -1,14 +1,12 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Round 2: round 1 was FAIL (an unreadable / newer save could be overwritten by a fresh world) — fixed with regression tests. Validation: 1069 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1093 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
-Task:  
-Phase 7 persistence first slice
+Task: Phase 8 profiling (F3 overlay)
 
-Summary:  
-IndexedDB persistence captures player/world state, chest contents, and sparse block edits. Loaded edits are applied before chunk lighting and meshing. Invalid or newer saves disable writes for the session to avoid overwriting them.
+Summary: The profiling overlay and timing hooks are integrated with bounded sample windows and focused tests. I found no concrete critical or important issues.
 
 Critical:
 - None
@@ -17,40 +15,33 @@ Important:
 - None
 
 Minor:
-- The IndexedDB connection remains open for the page lifetime and has no `versionchange` or close handling. This is acceptable for the current single-page app, but could block a future schema upgrade while another tab is open.
+- `DebugOverlay` has a `dispose()` method, but the application does not call it. This is harmless for the current single-session lifecycle; consider calling it if teardown or restart support is added.
 
 Required fixes:
 - None
 
 Tests:
-- Added tests cover serialization validation, save/restore, dirty chunk tracking, write failure retry, and scheduler behavior. `docs/PROGRESS.md` reports 63 test files / 1069 tests, with build and lint passing. I did not rerun them during this review.
+- The added tests cover rolling statistics, formatting, F3 input, and instrumentation. `docs/PROGRESS.md` reports 66 files and 1093 tests passing; I did not rerun them.
 
 Architecture:
-- Save encoding and validation, storage, game-state mapping, and scheduling are separated cleanly. No material `CLAUDE.md` violation found.
+- The profiling code is separated into pure statistics/formatting modules and UI integration. Timing is injected through a narrow probe interface.
 
 Performance:
-- Chunk persistence is sparse and incremental after the initial write. Player and chest fingerprints are checked at autosave intervals.
+- Sample storage is bounded, and overlay snapshots are only built while visible and at the configured refresh rate. Mesh upload time is excluded from mesh timing and remains visible through frame time, as documented.
 
 Reviewed files:
 - `CLAUDE.md`
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
 - `src/config/constants.ts`
-- `src/items/ChestStore.ts`
 - `src/main.ts`
-- `src/player/PlayerHealth.ts`
-- `src/player/PlayerHunger.ts`
-- `src/save/IndexedDbSaveStore.ts`
-- `src/save/SaveScheduler.ts`
-- `src/save/gameSave.ts`
-- `src/save/saveFormat.ts`
-- `src/world/BlockEditStore.ts`
+- `src/player/InputController.ts`
 - `src/world/ChunkManager.ts`
-- `src/world/GameTime.ts`
-- `tests/BlockEditStore.test.ts`
-- `tests/SaveScheduler.test.ts`
-- `tests/gameSave.test.ts`
-- `tests/saveFormat.test.ts`
+- `src/world/ChunkStore.ts`
+- `src/world/mesher/remesh.ts`
+- `src/debug/`
+- `src/ui/DebugOverlay.ts`
+- Relevant tests under `tests/`
 
-Recommendation:  
-Continue
+Recommendation:
+- Continue

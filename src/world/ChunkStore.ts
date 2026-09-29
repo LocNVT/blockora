@@ -21,6 +21,11 @@ export class ChunkStore {
     return this.chunksByKey.values();
   }
 
+  /** Number of currently loaded chunks. */
+  get size(): number {
+    return this.chunksByKey.size;
+  }
+
   setChunk(chunk: Chunk): void {
     this.chunksByKey.set(chunkKey(chunk.cx, chunk.cz), chunk);
   }

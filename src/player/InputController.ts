@@ -45,6 +45,8 @@ export interface UiInput {
   toggleInventory: boolean;
   /** Escape pressed this frame while unlocked. */
   close: boolean;
+  /** F3 pressed this frame (recorded in any pointer-lock state; repeats suppressed). */
+  toggleDebug: boolean;
 }
 
 /**
@@ -70,10 +72,21 @@ export class InputController {
   private pendingHotbarScroll = 0;
   private pendingToggleInventory = false;
   private pendingClose = false;
+  private pendingToggleDebug = false;
+  private debugKeyHeld = false;
 
   private readonly doc: Document;
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (event.code === 'F3') {
+      // Browsers bind F3 to "find next"; always claim it, locked or not.
+      event.preventDefault();
+      if (!this.debugKeyHeld) {
+        this.pendingToggleDebug = true;
+      }
+      this.debugKeyHeld = true;
+      return;
+    }
     if (!this.locked) {
       // Movement/look/action state (`pressed`) stays untouched while
       // unlocked (sample()/consumeActions() must keep ignoring it), but
@@ -129,6 +142,9 @@ export class InputController {
   private readonly onKeyUp = (event: KeyboardEvent): void => {
     this.pressed.delete(event.code);
     this.heldUnlocked.delete(event.code);
+    if (event.code === 'F3') {
+      this.debugKeyHeld = false;
+    }
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
@@ -180,6 +196,7 @@ export class InputController {
   private readonly releaseAll = (): void => {
     this.pressed.clear();
     this.heldUnlocked.clear();
+    this.debugKeyHeld = false;
     this.mouseDeltaX = 0;
     this.mouseDeltaY = 0;
     this.breakHeld = false;
@@ -298,9 +315,11 @@ export class InputController {
     const input: UiInput = {
       toggleInventory: this.pendingToggleInventory,
       close: this.pendingClose,
+      toggleDebug: this.pendingToggleDebug,
     };
     this.pendingToggleInventory = false;
     this.pendingClose = false;
+    this.pendingToggleDebug = false;
     return input;
   }
 
