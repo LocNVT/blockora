@@ -7,6 +7,8 @@ import { TreePlacer, TREE_MAX_HORIZONTAL_REACH } from './biome/TreePlacer';
 import type { BiomeDefinition } from './biome/Biome';
 import { OrePlacer } from './ore/OrePlacer';
 import { CavePlacer } from './cave/CavePlacer';
+import { StructurePlacer, footprintContains, type PlacedStructure } from './structure/StructurePlacer';
+import { stampStructure } from './structure/stampStructure';
 import { WORLD_CONFIG, WORLD_GEN_CONFIG } from '../config/constants';
 
 const { chunkWidth, chunkDepth, chunkHeight, seaLevel } = WORLD_CONFIG;
@@ -19,6 +21,14 @@ const DETAIL_SEED_OFFSET = 1;
 const BEACH_HEIGHT_MARGIN = 1;
 
 /**
+ * Structure lookup padding around a chunk: a tree rooted up to
+ * TREE_MAX_HORIZONTAL_REACH outside the chunk is suppressed when its root is
+ * within TREE_MAX_HORIZONTAL_REACH of a structure footprint, so structures
+ * up to twice that reach away still matter to this chunk.
+ */
+const STRUCTURE_QUERY_PADDING = TREE_MAX_HORIZONTAL_REACH * 2;
+
+/**
  * Deterministic terrain generator: `(seed, cx, cz)` always produces the same
  * chunk. A low-frequency biome noise (see BiomeSelector) picks Plains/Forest/
  * Desert/Taiga/Mountains/Swamp per column, which shifts terrain height/
@@ -28,8 +38,11 @@ const BEACH_HEIGHT_MARGIN = 1;
  * more than `caveSurfaceMargin` blocks below the surface is first carved into
  * cave air by CavePlacer, and any stone left over is thresholded into ore
  * veins by OrePlacer. Water then fills any air up to sea level (caves stay
- * dry since they're below the surface, not open to it), and trees are
- * stamped on top (see stampTrees).
+ * dry since they're below the surface, not open to it), trees are
+ * stamped on top (see stampTrees), and finally structures (ruins, see
+ * src/world/structure) are stamped last. Trees whose canopy could touch a
+ * structure footprint are skipped rather than overwritten, so ruins never
+ * end up with half-cut trees in them.
  *
  * Runs on the main thread for now (Web Worker offload is Phase 8).
  */
@@ -39,6 +52,7 @@ export class WorldGenerator {
   private readonly treePlacer: TreePlacer;
   private readonly orePlacer: OrePlacer;
   private readonly cavePlacer: CavePlacer;
+  private readonly structurePlacer: StructurePlacer;
 
   constructor(seed: number = WORLD_GEN_CONFIG.defaultSeed) {
     this.seed = seed;
@@ -46,6 +60,7 @@ export class WorldGenerator {
     this.treePlacer = new TreePlacer(seed);
     this.orePlacer = new OrePlacer(seed);
     this.cavePlacer = new CavePlacer(seed);
+    this.structurePlacer = new StructurePlacer(seed, this);
   }
 
   /** Deterministic biome for a world column (temperature/moisture noise, spans many chunks). */
@@ -121,9 +136,22 @@ export class WorldGenerator {
       }
     }
 
-    this.stampTrees(cx, cz, blocks);
+    const structures = this.structuresNearChunk(cx, cz);
+    this.stampTrees(cx, cz, blocks, structures);
+    for (const structure of structures) {
+      stampStructure(structure, cx, cz, blocks);
+    }
 
     return new Chunk(cx, cz, blocks);
+  }
+
+  /** Structures whose footprint lies within STRUCTURE_QUERY_PADDING of chunk (cx, cz). */
+  private structuresNearChunk(cx: number, cz: number): PlacedStructure[] {
+    const minX = cx * chunkWidth - STRUCTURE_QUERY_PADDING;
+    const minZ = cz * chunkDepth - STRUCTURE_QUERY_PADDING;
+    const maxX = (cx + 1) * chunkWidth - 1 + STRUCTURE_QUERY_PADDING;
+    const maxZ = (cz + 1) * chunkDepth - 1 + STRUCTURE_QUERY_PADDING;
+    return this.structurePlacer.structuresIntersecting(minX, minZ, maxX, maxZ);
   }
 
   /**
@@ -132,9 +160,15 @@ export class WorldGenerator {
    * deterministic tree spawns, and stamps any of their blocks that land
    * inside this chunk. Skips beach/underwater columns (surface at or below
    * seaLevel + BEACH_HEIGHT_MARGIN, matching the beach-sand cutoff used
-   * above) since a bare trunk in water/sand would look wrong.
+   * above) since a bare trunk in water/sand would look wrong, and trees
+   * rooted within canopy reach of a structure footprint (the structure wins).
    */
-  private stampTrees(cx: number, cz: number, blocks: Uint8Array): void {
+  private stampTrees(
+    cx: number,
+    cz: number,
+    blocks: Uint8Array,
+    structures: readonly PlacedStructure[],
+  ): void {
     const chunkMinX = cx * chunkWidth;
     const chunkMinZ = cz * chunkDepth;
 
@@ -156,6 +190,9 @@ export class WorldGenerator {
         const groundY = this.surfaceHeight(worldX, worldZ, biome);
         const isBeach = groundY <= seaLevel + BEACH_HEIGHT_MARGIN;
         if (isBeach) {
+          continue;
+        }
+        if (structures.some((s) => footprintContains(s, worldX, worldZ, TREE_MAX_HORIZONTAL_REACH))) {
           continue;
         }
 

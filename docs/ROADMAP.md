@@ -177,12 +177,12 @@ Player can encounter and fight mobs.
 
 # Phase 6 — Structures
 
-* [ ] Structure system
+* [x] Structure system
 * [ ] Village
-* [ ] Ruins
+* [x] Ruins
 * [ ] Dungeon
 * [ ] Loot
-* [ ] Deterministic placement
+* [x] Deterministic placement
 
 ### Exit criteria
 

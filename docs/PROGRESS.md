@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 6: structure system (not started).
+Phase 6: chest storage + ruin loot.
 
 ---
 
@@ -99,9 +99,9 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 # Phase 6
 
-* [ ] Structures
+* [x] Structures
 * [ ] Village
-* [ ] Ruins
+* [x] Ruins
 * [ ] Dungeon
 * [ ] Loot
 
@@ -167,6 +167,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
+* Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); one template (ruin); floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes. Chests are placeable but have no storage yet.
 * `mulberry32` is duplicated in `src/entities/mobSpawning.ts` and `src/world/texture/tileArt.ts`.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
@@ -247,6 +248,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-29 — Phase 6 structure system + ruin
+
+* `src/world/structure/`: plain-data templates (ASCII layer maps → placements, `force` / `ifAir`), pure Y rotation (0/90/180/270), `StructurePlacer` (one hashed candidate per 6×6-chunk region, inset so footprints never leave their region → no overlaps, ≤ 4 regions per chunk; site check via `surfaceHeight` / `biomeAt`: allowed biomes, surface ≥ sea level + 2, slope ≤ 3), `stampStructure` (writes only cells inside the generated chunk). `STRUCTURE_CONFIG`.
+* WorldGenerator order: terrain → caves / ores → water → trees → structures; trees whose root is within tree reach of a footprint are skipped (no half-cut trees). Chunk-order independence tested (4-chunk ruin generated in 4 orders → identical blocks).
+* Ruin: 7×5×7 broken cobblestone / stone walls, doorway with plank lintel, collapsed gravel corner, holed plank floor, cobblestone foundation down to terrain. Plains / Forest / Desert, ~28 % of regions. Default seed: nearest ruin at (81, 42, −41), ~103 blocks from spawn.
+* Generation time unchanged within noise (~4.2–5.1 ms / chunk before and after). Verified in real Chrome (temporary teleport hook, removed); Codex review PASS_WITH_NOTES (first round).
 
 ## 2026-09-29 — Phase 5 hostile mob (Shambler) — Phase 5 complete
 
@@ -494,11 +502,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (53 files, 923 tests)
+pnpm test → PASS (56 files, 961 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 6 structure system: data-driven structure templates (block palettes + offsets) placed deterministically per seed + chunk region during generation, chunk-border-safe (a structure spanning several chunks writes only the blocks inside the chunk being generated), first structure = small ruin; then loot chests.
+Phase 6 loot: chest storage (per-block container data keyed by world position in a ChunkStore-side map, 27 slots, reusing Inventory / ItemStack logic; RMB opens a chest screen reusing the inventory UI; breaking a chest drops its contents), then ruins place a chest whose contents are filled deterministically from a data-driven loot table (seed + structure position), filled lazily on first open so generation stays pure.
