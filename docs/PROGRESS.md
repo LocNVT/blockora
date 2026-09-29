@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 6: dungeon structure.
+Phase 6: village.
 
 ---
 
@@ -102,7 +102,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * [x] Structures
 * [ ] Village
 * [x] Ruins
-* [ ] Dungeon
+* [x] Dungeon
 * [x] Loot
 
 ---
@@ -168,7 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: contents are memory-only (lost on reload, Phase 7); player-placed chest blocks vanish when their chunk unloads (block edits aren't kept yet) but the container stays, so a new chest placed there gets the old contents back; `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
-* Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); one template (ruin); floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
+* Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
 * `requiresTool` is tier-agnostic (any pickaxe harvests stone/ores); add `minTier` when iron tools exist.
@@ -248,6 +248,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 6 underground dungeon
+
+* Templates gain `placement: 'surface' | 'underground'`. Underground floor is hashed within a 12-block band whose top keeps the ceiling ≥ 6 blocks under the footprint's lowest surface (floor ≥ y 5); skipped where any column is below sea level; all biomes. Pure site checks, so chunk-order independence holds (tested).
+* `DUNGEON_TEMPLATE`: 9×5×9 cobblestone room (stone / gravel variation, 2 pillars, 1×2 wall gap left to terrain), shell always overwrites caves, interior carved, no light sources (shambler spawns pass the darkness check at full daylight). Two chests with the richer `dungeon_chest` table (4–7 rolls: iron / gold ore, coal, torches, food, stone tools).
+* One candidate per region picks ruin or dungeon via the template hash → no overlaps. `STRUCTURE_CONFIG.underground`. Default seed: dungeon at (80, 25, −41), ~102 blocks from spawn (it replaced the former nearest ruin there).
+* Generation time within noise (~+1 %). Verified in real Chrome (temporary teleport hook, removed): dark room, chest loot opens. Codex review PASS_WITH_NOTES (first round).
 
 ## 2026-09-29 — Phase 6 chest storage + ruin loot
 
@@ -508,11 +515,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (57 files, 981 tests)
+pnpm test → PASS (58 files, 1003 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 6 dungeon: underground stone-brick-like room template (existing blocks: cobblestone / stone / gravel) placed by the structure system below the surface (new placement mode: fixed depth range under the footprint's lowest surface, only in solid stone, never breaching the surface or water), with 1–2 loot chests (`dungeon_chest` table, richer than ruins) and a dark interior so shamblers spawn there; then Village.
+Phase 6 village: a multi-building surface structure (3–5 small original houses around a central feature, gravel paths between them) on flat plains / desert sites, placed by the structure system as a composite (village layout hashed per region → several templates stamped chunk-locally), each house with a chest (`village_chest` loot) and a torch; exterior site checks via pure queries; chunk-order independence tested. Then verify Phase 6 exit criteria and start Phase 7 (persistence).

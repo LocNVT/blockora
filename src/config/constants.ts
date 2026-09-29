@@ -185,6 +185,20 @@ export const STRUCTURE_CONFIG = {
   maxSlope: 3,
   /** Deepest foundation fill (blocks) below the structure floor; must be >= maxSlope so a valid site never floats. */
   maxFoundationDepth: 4,
+  /**
+   * Underground templates (dungeons). The shallowest allowed floor puts the
+   * room's top layer `ceilingBelowSurface` blocks under the footprint's lowest
+   * surface column (below topsoil + subsoil, so the shell sits in stone and
+   * never breaches the surface); the floor is then hashed up to `depthRange`
+   * blocks deeper, never below `minFloorY`.
+   */
+  underground: {
+    ceilingBelowSurface: 6,
+    minFloorY: 5,
+    depthRange: 12,
+    /** Every footprint column's surface must be >= seaLevel + this (0 = no water above; rooms under open water would be unreachable without swimming). */
+    minSurfaceAboveSeaLevel: 0,
+  },
 } as const;
 
 export const ATLAS_CONFIG = {

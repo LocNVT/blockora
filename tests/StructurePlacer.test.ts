@@ -5,7 +5,7 @@ import {
   type PlacedStructure,
   type TerrainQuery,
 } from '../src/world/structure/StructurePlacer';
-import { RUIN_TEMPLATE } from '../src/world/structure/templates';
+import { RUIN_TEMPLATE, STRUCTURE_TEMPLATES } from '../src/world/structure/templates';
 import { horizontalReach, type Rotation } from '../src/world/structure/rotation';
 import { BiomeId, getBiomeDefinition, type BiomeDefinition } from '../src/world/biome/Biome';
 import { WorldGenerator } from '../src/world/WorldGenerator';
@@ -161,7 +161,8 @@ describe('StructurePlacer site validity', () => {
     const placer = new StructurePlacer(1, gen);
     let checked = 0;
     for (const s of structuresInRange(placer, 5)) {
-      if (!s) continue;
+      // Surface rules only; underground placement is covered in dungeon.test.ts.
+      if (!s || s.template.placement !== 'surface') continue;
       checked += 1;
       let lo = Infinity;
       let hi = -Infinity;
@@ -185,7 +186,9 @@ describe('StructurePlacer lookup cost', () => {
   it('a chunk-sized query evaluates at most the 4 regions it can overlap', () => {
     const terrain = fakeTerrain(() => DRY);
     const placer = new StructurePlacer(1, terrain);
-    const footprintColumns = RUIN_TEMPLATE.size.width * RUIN_TEMPLATE.size.depth;
+    const footprintColumns = Math.max(
+      ...STRUCTURE_TEMPLATES.map((t) => t.size.width * t.size.depth),
+    );
     // Straddle a region corner so the box overlaps 4 regions.
     const minX = REGION_WIDTH - 8;
     const minZ = REGION_DEPTH - 8;

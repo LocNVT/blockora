@@ -35,6 +35,21 @@ export const LOOT_TABLES: Readonly<Record<string, LootTable>> = {
       { itemId: ItemId.StonePickaxe, weight: 1, min: 1, max: 1 },
     ],
   },
+  /** Buried dungeon rooms: more picks, more ore/coal/torches and stone tools than a ruin. */
+  dungeon_chest: {
+    rolls: { min: 4, max: 7 },
+    entries: [
+      { itemId: ItemId.IronOre, weight: 6, min: 2, max: 6 },
+      { itemId: ItemId.Coal, weight: 6, min: 3, max: 8 },
+      { itemId: ItemId.Torch, weight: 5, min: 4, max: 10 },
+      { itemId: ItemId.GoldOre, weight: 2, min: 1, max: 3 },
+      { itemId: ItemId.Apple, weight: 4, min: 2, max: 4 },
+      { itemId: ItemId.RawPork, weight: 4, min: 1, max: 3 },
+      { itemId: ItemId.StonePickaxe, weight: 3, min: 1, max: 1 },
+      { itemId: ItemId.StoneAxe, weight: 2, min: 1, max: 1 },
+      { itemId: ItemId.StoneShovel, weight: 2, min: 1, max: 1 },
+    ],
+  },
 };
 
 /** Distinct from every other seed offset used by world gen / mobs. */
