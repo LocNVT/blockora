@@ -168,6 +168,25 @@ export const WORLD_GEN_CONFIG = {
   caveSurfaceMargin: 6,
 } as const;
 
+/**
+ * Deterministic structure placement (see src/world/structure). The world is
+ * split into square regions of `regionSizeChunks` chunks; each region holds at
+ * most one structure candidate at a hashed position, accepted with
+ * `spawnChance` and then validated against the pure terrain queries.
+ */
+export const STRUCTURE_CONFIG = {
+  /** Region edge length in chunks; one structure candidate per region. */
+  regionSizeChunks: 6,
+  /** Chance (0..1) a region's candidate is attempted at all (before site validation). */
+  spawnChance: 0.35,
+  /** Site is rejected when any footprint column's surface is below seaLevel + this (keeps ruins off water and beaches). */
+  minSurfaceAboveSeaLevel: 2,
+  /** Site is rejected when the footprint's surface height range (max - min) exceeds this (too steep). */
+  maxSlope: 3,
+  /** Deepest foundation fill (blocks) below the structure floor; must be >= maxSlope so a valid site never floats. */
+  maxFoundationDepth: 4,
+} as const;
+
 export const ATLAS_CONFIG = {
   /** Pixel size (width and height) of one square tile in the atlas. */
   tileSize: 16,
