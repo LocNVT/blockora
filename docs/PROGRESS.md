@@ -89,11 +89,11 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 # Phase 5
 
 * [x] Entity system
-* [ ] Passive mobs
+* [x] Passive mobs
 * [ ] Hostile mobs
-* [ ] AI
-* [ ] Combat
-* [ ] Drops
+* [ ] AI (Idle/Wander/Flee done; Target/Chase/Attack pending)
+* [x] Combat
+* [x] Drops
 
 ---
 
