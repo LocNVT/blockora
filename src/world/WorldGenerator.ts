@@ -39,10 +39,12 @@ const STRUCTURE_QUERY_PADDING = TREE_MAX_HORIZONTAL_REACH * 2;
  * cave air by CavePlacer, and any stone left over is thresholded into ore
  * veins by OrePlacer. Water then fills any air up to sea level (caves stay
  * dry since they're below the surface, not open to it), trees are
- * stamped on top (see stampTrees), and finally structures (ruins, see
- * src/world/structure) are stamped last. Trees whose canopy could touch a
- * structure footprint are skipped rather than overwritten, so ruins never
- * end up with half-cut trees in them.
+ * stamped on top (see stampTrees), and finally structures (surface ruins
+ * and buried dungeons, see src/world/structure) are stamped last, so a
+ * dungeon shell overwrites any cave or ore it intersects. Trees whose canopy
+ * could touch a surface structure footprint are skipped rather than
+ * overwritten, so ruins never end up with half-cut trees in them (dungeons
+ * are buried below the soil and leave trees alone).
  *
  * Runs on the main thread for now (Web Worker offload is Phase 8).
  */
@@ -166,7 +168,7 @@ export class WorldGenerator {
    * inside this chunk. Skips beach/underwater columns (surface at or below
    * seaLevel + BEACH_HEIGHT_MARGIN, matching the beach-sand cutoff used
    * above) since a bare trunk in water/sand would look wrong, and trees
-   * rooted within canopy reach of a structure footprint (the structure wins).
+   * rooted within canopy reach of a surface structure footprint (the structure wins).
    */
   private stampTrees(
     cx: number,
@@ -197,7 +199,13 @@ export class WorldGenerator {
         if (isBeach) {
           continue;
         }
-        if (structures.some((s) => footprintContains(s, worldX, worldZ, TREE_MAX_HORIZONTAL_REACH))) {
+        if (
+          structures.some(
+            (s) =>
+              s.template.placement === 'surface' &&
+              footprintContains(s, worldX, worldZ, TREE_MAX_HORIZONTAL_REACH),
+          )
+        ) {
           continue;
         }
 

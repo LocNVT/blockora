@@ -29,6 +29,7 @@ const ASYMMETRIC: StructureTemplate = {
       '.': { blockId: BlockId.Air, mode: 'force' },
     },
   ),
+  placement: 'surface',
   allowedBiomes: [BiomeId.Plains],
 };
 

@@ -8,6 +8,14 @@ import type { BiomeId } from '../biome/Biome';
  */
 export type PlacementMode = 'force' | 'ifAir';
 
+/**
+ * Where a template is placed vertically (see StructurePlacer.evaluateSite):
+ * `surface` sits one block above the footprint's highest terrain column;
+ * `underground` is buried at a hashed depth below its lowest column
+ * (STRUCTURE_CONFIG.underground).
+ */
+export type StructurePlacementKind = 'surface' | 'underground';
+
 /** One block of a template, in template-local cell coordinates (0..size-1 on each axis). */
 export interface StructureBlock {
   readonly dx: number;
@@ -27,8 +35,8 @@ export interface StructureSize {
 
 /**
  * Template-local cell that lands on the placement origin. Rotation pivots
- * around it on X/Z; `y` is the floor layer, which sits one block above the
- * highest terrain column of the footprint.
+ * around it on X/Z; `y` is the floor layer (its world height depends on the
+ * template's placement kind).
  */
 export interface StructureAnchor {
   readonly x: number;
@@ -42,6 +50,7 @@ export interface StructureTemplate {
   readonly size: StructureSize;
   readonly anchor: StructureAnchor;
   readonly blocks: readonly StructureBlock[];
+  readonly placement: StructurePlacementKind;
   /** Biomes every footprint column must belong to for a site to be valid. */
   readonly allowedBiomes: readonly BiomeId[];
   /**

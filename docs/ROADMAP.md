@@ -180,7 +180,7 @@ Player can encounter and fight mobs.
 * [x] Structure system
 * [ ] Village
 * [x] Ruins
-* [ ] Dungeon
+* [x] Dungeon
 * [x] Loot
 * [x] Deterministic placement
 

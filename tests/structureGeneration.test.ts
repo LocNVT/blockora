@@ -75,7 +75,8 @@ function snapshot(chunks: ReadonlyMap<string, Chunk>, s: PlacedStructure): numbe
   return out;
 }
 
-const structures = placedStructures(SEED);
+// Ruin-specific fixtures: underground templates (dungeons) share the region grid; see dungeon.test.ts.
+const structures = placedStructures(SEED).filter((s) => s.template.placement === 'surface');
 const fourChunkRuin = structures.find((s) => chunksCovering(s).coords.length === 4);
 
 describe('structure generation', () => {

@@ -12,6 +12,7 @@ const STRUCTURE_POS_X_SEED_OFFSET = 501;
 const STRUCTURE_POS_Z_SEED_OFFSET = 502;
 const STRUCTURE_ROTATION_SEED_OFFSET = 503;
 const STRUCTURE_TEMPLATE_SEED_OFFSET = 504;
+const STRUCTURE_DEPTH_SEED_OFFSET = 505;
 
 const ROTATION_COUNT = 4;
 
@@ -42,10 +43,15 @@ export interface PlacedStructure extends StructureCandidate {
   readonly maxZ: number;
 }
 
-export type SiteRejection = 'biome' | 'water' | 'slope';
+/** `depth`: terrain too low to bury an underground template at the required depth. */
+export type SiteRejection = 'biome' | 'water' | 'slope' | 'depth';
 
 export type SiteEvaluation =
   | { readonly ok: true; readonly floorY: number }
+  | { readonly ok: false; readonly reason: SiteRejection };
+
+type FootprintScan =
+  | { readonly ok: true; readonly lowest: number; readonly highest: number }
   | { readonly ok: false; readonly reason: SiteRejection };
 
 /**
@@ -55,6 +61,9 @@ export type SiteEvaluation =
  * rotation are independent hashes of (seed, region coords). Candidates are
  * inset by the template's reach so a footprint never leaves its region
  * (structures never overlap, and a region only affects chunks it overlaps).
+ * Surface (ruin) and underground (dungeon) templates share this one grid —
+ * the template hash picks which one a region gets — so the same guarantee
+ * keeps ruins and dungeons apart.
  * Site validity uses only pure terrain queries, so any chunk can recompute
  * the structures around it in any generation order.
  */
@@ -123,10 +132,14 @@ export class StructurePlacer {
   }
 
   /**
-   * Checks a site against the terrain: every footprint column must be in an
-   * allowed biome, at least minSurfaceAboveSeaLevel above sea level, and the
-   * footprint's height range must not exceed maxSlope. The floor sits one
-   * block above the highest column, so the structure never cuts into terrain.
+   * Checks a site against the terrain and picks its floor height. Every
+   * footprint column must be in an allowed biome and dry enough (surface:
+   * at least minSurfaceAboveSeaLevel above sea level; underground: no water
+   * above, see STRUCTURE_CONFIG.underground). Surface templates also reject
+   * a height range above maxSlope and sit one block above the highest
+   * column, so they never cut into terrain. Underground templates are buried
+   * below the lowest column (see undergroundFloor). Pure: terrain queries
+   * and seed hashes only.
    */
   evaluateSite(
     template: StructureTemplate,
@@ -134,8 +147,32 @@ export class StructurePlacer {
     originZ: number,
     rotation: Rotation,
   ): SiteEvaluation {
+    const scan = this.scanFootprint(template, originX, originZ, rotation);
+    if (!scan.ok) {
+      return scan;
+    }
+    if (template.placement === 'underground') {
+      return this.undergroundFloor(template, originX, originZ, scan.lowest);
+    }
+    if (scan.highest - scan.lowest > STRUCTURE_CONFIG.maxSlope) {
+      return { ok: false, reason: 'slope' };
+    }
+    return { ok: true, floorY: scan.highest + 1 };
+  }
+
+  /** Biome/water check of every footprint column, plus the footprint's surface height range. */
+  private scanFootprint(
+    template: StructureTemplate,
+    originX: number,
+    originZ: number,
+    rotation: Rotation,
+  ): FootprintScan {
     const extent = rotatedExtent(template, rotation);
-    const minSurface = WORLD_CONFIG.seaLevel + STRUCTURE_CONFIG.minSurfaceAboveSeaLevel;
+    const minAboveSea =
+      template.placement === 'underground'
+        ? STRUCTURE_CONFIG.underground.minSurfaceAboveSeaLevel
+        : STRUCTURE_CONFIG.minSurfaceAboveSeaLevel;
+    const minSurface = WORLD_CONFIG.seaLevel + minAboveSea;
     let lowest = Number.POSITIVE_INFINITY;
     let highest = Number.NEGATIVE_INFINITY;
 
@@ -153,11 +190,31 @@ export class StructurePlacer {
         highest = Math.max(highest, surface);
       }
     }
+    return { ok: true, lowest, highest };
+  }
 
-    if (highest - lowest > STRUCTURE_CONFIG.maxSlope) {
-      return { ok: false, reason: 'slope' };
+  /**
+   * Floor height for an underground template: the shallowest allowed floor
+   * keeps the template's top layer ceilingBelowSurface blocks under the
+   * lowest footprint surface; the floor is hashed (seed + origin) up to
+   * depthRange blocks deeper, clamped at minFloorY. Rejects terrain too low
+   * for even the shallowest floor.
+   */
+  private undergroundFloor(
+    template: StructureTemplate,
+    originX: number,
+    originZ: number,
+    lowestSurface: number,
+  ): SiteEvaluation {
+    const { ceilingBelowSurface, minFloorY, depthRange } = STRUCTURE_CONFIG.underground;
+    const layersAboveFloor = template.size.height - 1 - template.anchor.y;
+    const shallowest = lowestSurface - ceilingBelowSurface - layersAboveFloor;
+    if (shallowest < minFloorY) {
+      return { ok: false, reason: 'depth' };
     }
-    return { ok: true, floorY: highest + 1 };
+    const deepest = Math.max(minFloorY, shallowest - depthRange);
+    const depthRoll = latticeHash2D(this.seed + STRUCTURE_DEPTH_SEED_OFFSET, originX, originZ);
+    return { ok: true, floorY: shallowest - Math.floor(depthRoll * (shallowest - deepest + 1)) };
   }
 
   /** The region's validated structure, or null when it rolled none or its site is invalid. */

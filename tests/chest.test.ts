@@ -182,12 +182,9 @@ describe('loot tables', () => {
 describe('structure chest detection', () => {
   const generator = new WorldGenerator(SEED);
   const placer = new StructurePlacer(SEED, generator);
-  const ruins: PlacedStructure[] = placer.structuresIntersecting(
-    -6 * REGION_BLOCKS,
-    -6 * REGION_BLOCKS,
-    6 * REGION_BLOCKS - 1,
-    6 * REGION_BLOCKS - 1,
-  );
+  const ruins: PlacedStructure[] = placer
+    .structuresIntersecting(-6 * REGION_BLOCKS, -6 * REGION_BLOCKS, 6 * REGION_BLOCKS - 1, 6 * REGION_BLOCKS - 1)
+    .filter((s) => s.template === RUIN_TEMPLATE);
   const ruin = ruins[0];
   if (ruin === undefined) throw new Error('no ruin found');
   const chestBlock = RUIN_TEMPLATE.blocks.find((b) => b.lootTable !== undefined);
