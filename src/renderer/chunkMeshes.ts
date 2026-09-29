@@ -14,19 +14,26 @@ import {
   uv,
   vec4,
 } from 'three/tsl';
-import type { ChunkMeshData, MeshSectionData } from '../world/mesher/MeshBuffers';
+import type { ChunkMeshData } from '../world/mesher/MeshBuffers';
 import { isSectionEmpty } from '../world/mesher/MeshBuffers';
 import type { ChunkMeshSink } from '../world/mesher/remesh';
-import { LIGHT_COMPONENTS } from '../world/mesher/MeshBuffers';
 import { MAX_LIGHT } from '../world/light/lightNibbles';
-import { RENDER_CONFIG, WORLD_CONFIG, ATLAS_CONFIG, LIGHT_RENDER_CONFIG } from '../config/constants';
+import {
+  RENDER_CONFIG,
+  WORLD_CONFIG,
+  ATLAS_CONFIG,
+  LIGHT_RENDER_CONFIG,
+  CHUNK_GEOMETRY_POOL_CONFIG,
+} from '../config/constants';
 import { clampDaylight } from './lightShading';
 import { chunkKey } from '../world/chunkCoords';
 import { createAtlasLayout, type AtlasLayout } from '../world/texture/atlasLayout';
-import { applyAtlasUvs } from '../world/texture/applyAtlasUvs';
 import { generateAtlasPixels } from '../world/texture/tileArt';
 import { TILE_NAMES } from '../world/texture/tiles';
 import { createVoxelAtlasTexture } from './voxelAtlasTexture';
+import { CHUNK_LIGHT_ATTRIBUTE, ChunkGeometryPool } from './ChunkGeometryPool';
+
+export { CHUNK_LIGHT_ATTRIBUTE } from './ChunkGeometryPool';
 
 /** Shared atlas layout + texture, built once from the data-driven tile list. */
 export const voxelAtlasLayout: AtlasLayout = createAtlasLayout(TILE_NAMES.length);
@@ -34,8 +41,6 @@ export const voxelAtlasLayout: AtlasLayout = createAtlasLayout(TILE_NAMES.length
 export const voxelAtlasPixels = generateAtlasPixels(voxelAtlasLayout, TILE_NAMES, ATLAS_CONFIG.seed);
 export const voxelAtlasTexture = createVoxelAtlasTexture(voxelAtlasLayout, voxelAtlasPixels);
 
-/** Geometry attribute holding MeshSectionData.light: Uint8 [sky, block] per vertex, normalized. */
-export const CHUNK_LIGHT_ATTRIBUTE = 'voxelLight';
 /** Normalized Uint8 reads as byte / 255 on both backends (unorm8 / normalized UNSIGNED_BYTE). */
 const LIGHT_BYTE_SCALE = 255;
 
@@ -105,88 +110,50 @@ export function disposeSharedVoxelResources(): void {
   voxelAtlasTexture.dispose();
 }
 
-const POSITION_ITEM_SIZE = 3;
-const NORMAL_ITEM_SIZE = 3;
-const UV_ITEM_SIZE = 2;
-/** Int8 normal components are normalized (-1/1 -> -1.0/1.0) by `normalized: true` below. */
-const NORMALIZED_NORMALS = true;
+/** A pool with the shared atlas layout and CHUNK_GEOMETRY_POOL_CONFIG capacities. */
+export function createChunkGeometryPool(): ChunkGeometryPool {
+  return new ChunkGeometryPool({ atlasLayout: voxelAtlasLayout, ...CHUNK_GEOMETRY_POOL_CONFIG });
+}
 
 /**
- * Builds a BufferGeometry from one mesh section (opaque or transparent), or
- * null when the section has no faces.
+ * Owns up to two THREE.Mesh per chunk column (opaque + transparent), keyed by
+ * chunk coordinate. Each non-empty section gets its OWN geometry and mesh — no
+ * material groups: three r186's WebGL backend caches the bound VAO + index
+ * buffer between draws, and two consecutive draws of one geometry (two groups)
+ * around an index-buffer upload hit "glDrawElements: Must have element array
+ * buffer bound". Meshes sit at the chunk's world origin (mesh data is
+ * chunk-local) and use the shared module-level materials.
  *
- * Each section gets its OWN geometry (and therefore its own mesh) instead of
- * one geometry with two material groups: three r186's WebGL backend caches
- * the bound VAO + index buffer between draws, but uploading any new index
- * buffer mid-frame unbinds the element buffer from the currently bound VAO.
- * Two consecutive draws of the same geometry (its two groups) then skip the
- * rebind and hit "glDrawElements: Must have element array buffer bound".
- * One draw per geometry can never repeat the cached (VAO, index) pair.
- */
-export function createSectionGeometry(section: MeshSectionData): THREE.BufferGeometry | null {
-  if (isSectionEmpty(section)) {
-    return null;
-  }
-  const atlasUv = applyAtlasUvs(section.uvs, section.tiles, voxelAtlasLayout);
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(section.positions, POSITION_ITEM_SIZE));
-  geometry.setAttribute(
-    'normal',
-    new THREE.BufferAttribute(section.normals, NORMAL_ITEM_SIZE, NORMALIZED_NORMALS),
-  );
-  geometry.setAttribute('uv', new THREE.BufferAttribute(atlasUv, UV_ITEM_SIZE));
-  geometry.setAttribute(
-    CHUNK_LIGHT_ATTRIBUTE,
-    new THREE.BufferAttribute(section.light, LIGHT_COMPONENTS, true),
-  );
-  geometry.setIndex(new THREE.BufferAttribute(section.indices, 1));
-  return geometry;
-}
-
-/** Per-section geometries of one chunk; a section with no faces is null (never an empty geometry). */
-export interface ChunkGeometries {
-  readonly opaque: THREE.BufferGeometry | null;
-  readonly transparent: THREE.BufferGeometry | null;
-}
-
-/** Builds the opaque and transparent geometries of a chunk (either may be null). */
-export function createChunkGeometries(data: ChunkMeshData): ChunkGeometries {
-  return {
-    opaque: createSectionGeometry(data.opaque),
-    transparent: createSectionGeometry(data.transparent),
-  };
-}
-
-/**
- * Owns up to two THREE.Mesh per chunk column (opaque + transparent, each with
- * its own geometry), keyed by chunk coordinate. Meshes are positioned at the
- * chunk's world origin (mesh data is chunk-local) and use the shared
- * module-level materials.
+ * Geometries come from a ChunkGeometryPool and go back to it on remove /
+ * replace (never disposed here): on the WebGL2 fallback every disposed
+ * geometry would leak a VAO (see ChunkGeometryPool). Meshes ARE disposed, so
+ * the renderer still drops their RenderObjects. The pool is owned by this
+ * renderer and disposed by `dispose()`.
  */
 export class ChunkMeshRenderer implements ChunkMeshSink {
   private readonly scene: THREE.Scene;
+  private readonly pool: ChunkGeometryPool;
   private readonly meshes = new Map<string, THREE.Mesh[]>();
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, pool: ChunkGeometryPool = createChunkGeometryPool()) {
     this.scene = scene;
+    this.pool = pool;
   }
 
   /** Creates or replaces the meshes for chunk (cx, cz); removes them entirely when data is empty. */
   upsert(cx: number, cz: number, data: ChunkMeshData): void {
-    const key = chunkKey(cx, cz);
-    const { opaque, transparent } = createChunkGeometries(data);
+    // Release first so a remesh can reuse the chunk's own geometries.
     this.remove(cx, cz);
 
     const created: THREE.Mesh[] = [];
-    if (opaque !== null) {
-      created.push(this.createMesh(cx, cz, opaque, chunkOpaqueMaterial));
+    if (!isSectionEmpty(data.opaque)) {
+      created.push(this.createMesh(cx, cz, this.pool.acquire(data.opaque), chunkOpaqueMaterial));
     }
-    if (transparent !== null) {
-      created.push(this.createMesh(cx, cz, transparent, chunkTransparentMaterial));
+    if (!isSectionEmpty(data.transparent)) {
+      created.push(this.createMesh(cx, cz, this.pool.acquire(data.transparent), chunkTransparentMaterial));
     }
     if (created.length > 0) {
-      this.meshes.set(key, created);
+      this.meshes.set(chunkKey(cx, cz), created);
     }
   }
 
@@ -203,26 +170,27 @@ export class ChunkMeshRenderer implements ChunkMeshSink {
     if (existing === undefined) {
       return;
     }
-    this.disposeMeshes(existing);
+    this.releaseMeshes(existing);
     this.meshes.delete(key);
   }
 
-  /** Disposes every chunk mesh's geometry and removes it from the scene. Shared materials survive. */
+  /** Removes every chunk mesh and disposes the pool (all its geometries). Shared materials survive. */
   dispose(): void {
     for (const meshes of this.meshes.values()) {
-      this.disposeMeshes(meshes);
+      this.releaseMeshes(meshes);
     }
     this.meshes.clear();
+    this.pool.dispose();
   }
 
-  private disposeMeshes(meshes: readonly THREE.Mesh[]): void {
+  private releaseMeshes(meshes: readonly THREE.Mesh[]): void {
     for (const mesh of meshes) {
       this.scene.remove(mesh);
       // Object3D 'dispose' makes the renderer drop its per-mesh RenderObject.
       // Without it three r186 keeps every removed chunk mesh (geometry,
       // attribute arrays, pipeline/bindings) alive in RenderObjects forever.
       mesh.dispose();
-      mesh.geometry.dispose();
+      this.pool.release(mesh.geometry);
     }
   }
 }

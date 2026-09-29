@@ -16,9 +16,16 @@ const UV_COMPONENTS = 2;
  * the `uvs` + `tiles` arrays are kept separate precisely so that switch is
  * possible without touching the mesher.
  */
-export function applyAtlasUvs(uvs: Float32Array, tiles: Uint16Array, layout: AtlasLayout): Float32Array {
+export function applyAtlasUvs(
+  uvs: Float32Array,
+  tiles: Uint16Array,
+  layout: AtlasLayout,
+  out: Float32Array = new Float32Array(tiles.length * UV_COMPONENTS),
+): Float32Array {
   const vertexCount = tiles.length;
-  const out = new Float32Array(vertexCount * UV_COMPONENTS);
+  if (out.length < vertexCount * UV_COMPONENTS) {
+    throw new RangeError(`applyAtlasUvs: output holds ${out.length} floats, needs ${vertexCount * UV_COMPONENTS}.`);
+  }
 
   for (let v = 0; v < vertexCount; v += 1) {
     const tile = tiles[v] ?? 0;

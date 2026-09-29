@@ -12,26 +12,51 @@ import {
   ChunkMeshRenderer,
   chunkOpaqueMaterial,
   chunkTransparentMaterial,
-  createChunkGeometries,
-  createSectionGeometry,
+  createChunkGeometryPool,
   getChunkDaylight,
   setChunkDaylight,
   voxelAtlasLayout,
 } from '../src/renderer/chunkMeshes';
+import type { ChunkMeshData } from '../src/world/mesher/MeshBuffers';
 import { applyAtlasUvs } from '../src/world/texture/applyAtlasUvs';
 
 function soloNeighborhood(chunk: Chunk): ChunkNeighborhood {
   return { center: chunk, posX: null, negX: null, posZ: null, negZ: null };
 }
 
-describe('createChunkGeometries', () => {
-  it('returns null for both sections of an empty chunk', () => {
+interface ChunkGeometries {
+  readonly opaque: THREE.BufferGeometry | null;
+  readonly transparent: THREE.BufferGeometry | null;
+}
+
+/** Upserts `data` into a fresh ChunkMeshRenderer; returns each section mesh's geometry (null when there is no mesh). */
+function createChunkGeometries(data: ChunkMeshData): ChunkGeometries {
+  const scene = new THREE.Scene();
+  new ChunkMeshRenderer(scene).upsert(0, 0, data);
+  const meshes = scene.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh);
+  const byMaterial = (material: THREE.Material): THREE.BufferGeometry | null =>
+    meshes.find((m) => m.material === material)?.geometry ?? null;
+  const opaque = byMaterial(chunkOpaqueMaterial);
+  const transparent = byMaterial(chunkTransparentMaterial);
+  expect(meshes).toHaveLength(Number(opaque !== null) + Number(transparent !== null));
+  return { opaque, transparent };
+}
+
+/** First `length` elements of an attribute's (capacity-sized, pooled) array. */
+function prefixOf(
+  attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null | undefined,
+  length: number,
+): number[] {
+  return Array.from(attribute?.array.subarray(0, length) ?? []);
+}
+
+describe('chunk section geometries', () => {
+  it('creates no mesh / geometry for either section of an empty chunk', () => {
     const chunk = new Chunk(0, 0);
     const data = meshChunk(soloNeighborhood(chunk), blockRegistry);
     const geometries = createChunkGeometries(data);
     expect(geometries.opaque).toBeNull();
     expect(geometries.transparent).toBeNull();
-    expect(createSectionGeometry(data.opaque)).toBeNull();
   });
 
   it('builds only the opaque geometry when there is no transparent geometry', () => {
@@ -44,7 +69,7 @@ describe('createChunkGeometries', () => {
     expect(opaque).not.toBeNull();
     // No material groups: one geometry, one draw, one material per mesh.
     expect(opaque?.groups.length).toBe(0);
-    expect(opaque?.getIndex()?.count).toBe(36);
+    expect(opaque?.drawRange).toEqual({ start: 0, count: 36 });
   });
 
   // Regression: two groups on ONE geometry made three's WebGL backend issue
@@ -64,10 +89,12 @@ describe('createChunkGeometries', () => {
     expect(opaque?.groups).toHaveLength(0);
     expect(transparent?.groups).toHaveLength(0);
     expect(opaque?.getIndex()).not.toBe(transparent?.getIndex());
-    expect(opaque?.getIndex()?.count).toBe(data.opaque.indices.length);
-    expect(transparent?.getIndex()?.count).toBe(data.transparent.indices.length);
+    expect(opaque?.drawRange.count).toBe(data.opaque.indices.length);
+    expect(transparent?.drawRange.count).toBe(data.transparent.indices.length);
     // Indices are section-local (no vertex offset from concatenation).
-    expect(Array.from(transparent?.getIndex()?.array ?? [])).toEqual(Array.from(data.transparent.indices));
+    expect(prefixOf(transparent?.getIndex(), data.transparent.indices.length)).toEqual(
+      Array.from(data.transparent.indices),
+    );
   });
 
   it('never yields a geometry with an empty index buffer', () => {
@@ -76,21 +103,25 @@ describe('createChunkGeometries', () => {
     const data = meshChunk(soloNeighborhood(chunk), blockRegistry);
     const { opaque, transparent } = createChunkGeometries(data);
     expect(opaque).toBeNull();
-    expect(transparent?.getIndex()?.count).toBeGreaterThan(0);
+    expect(transparent?.drawRange.count).toBeGreaterThan(0);
   });
 
-  it('attribute buffer lengths match position/index counts, with no color attribute', () => {
+  it('attributes hold the section in their (equal-capacity) prefix, draw range = index count, no color attribute', () => {
     const chunk = new Chunk(0, 0);
     chunk.setBlock(5, 5, 5, BlockId.Stone);
     const data = meshChunk(soloNeighborhood(chunk), blockRegistry);
     const geometry = createChunkGeometries(data).opaque;
     expect(geometry).not.toBeNull();
 
-    expect(geometry?.getAttribute('position').count).toBe(24);
-    expect(geometry?.getAttribute('normal').count).toBe(24);
+    const capacity = geometry?.getAttribute('position').count ?? 0;
+    expect(capacity).toBeGreaterThanOrEqual(24);
+    expect(geometry?.getAttribute('normal').count).toBe(capacity);
+    expect(geometry?.getAttribute('uv').count).toBe(capacity);
     expect(geometry?.getAttribute('color')).toBeUndefined();
-    expect(geometry?.getAttribute('uv').count).toBe(24);
-    expect(geometry?.getIndex()?.count).toBe(36);
+    expect(geometry?.getIndex()?.count).toBeGreaterThanOrEqual(36);
+    expect(geometry?.drawRange).toEqual({ start: 0, count: 36 });
+    expect(prefixOf(geometry?.getAttribute('position'), 72)).toEqual(Array.from(data.opaque.positions));
+    expect(prefixOf(geometry?.getAttribute('normal'), 72)).toEqual(Array.from(data.opaque.normals));
   });
 
   it('uv attribute equals the atlas-mapped uvs computed directly from mesh data', () => {
@@ -109,6 +140,8 @@ describe('createChunkGeometries', () => {
 
     const opaqueUv = opaque?.getAttribute('uv').array as Float32Array;
     const transparentUv = transparent?.getAttribute('uv').array as Float32Array;
+    expect(opaqueUv.length).toBeGreaterThanOrEqual(expectedOpaqueUv.length);
+    expect(transparentUv.length).toBeGreaterThanOrEqual(expectedTransparentUv.length);
     for (let i = 0; i < expectedOpaqueUv.length; i += 1) {
       expect(opaqueUv[i]).toBeCloseTo(expectedOpaqueUv[i] as number, 6);
     }
@@ -118,7 +151,7 @@ describe('createChunkGeometries', () => {
   });
 });
 
-describe('createChunkGeometries — large chunks', () => {
+describe('chunk section geometries — large chunks', () => {
   // Regression: merging via Array.push(...typedArray) threw RangeError on large meshes.
   it('handles a worst-case checkerboard chunk without throwing', () => {
     const chunk = new Chunk(0, 0);
@@ -135,10 +168,11 @@ describe('createChunkGeometries — large chunks', () => {
     const neighborhood: ChunkNeighborhood = { center: chunk, posX: null, negX: null, posZ: null, negZ: null };
     const data = meshChunk(neighborhood, blockRegistry);
     const { opaque, transparent } = createChunkGeometries(data);
-    expect(opaque?.getAttribute('position').count).toBe(data.opaque.positions.length / 3);
-    expect(transparent?.getAttribute('position').count).toBe(data.transparent.positions.length / 3);
-    expect(opaque?.getIndex()?.count).toBe(data.opaque.indices.length);
-    expect(transparent?.getIndex()?.count).toBe(data.transparent.indices.length);
+    expect(opaque?.getAttribute('position').count).toBeGreaterThanOrEqual(data.opaque.positions.length / 3);
+    expect(transparent?.getAttribute('position').count).toBeGreaterThanOrEqual(data.transparent.positions.length / 3);
+    expect(opaque?.drawRange.count).toBe(data.opaque.indices.length);
+    expect(transparent?.drawRange.count).toBe(data.transparent.indices.length);
+    expect(prefixOf(opaque?.getIndex(), data.opaque.indices.length)).toEqual(Array.from(data.opaque.indices));
   });
 });
 
@@ -164,7 +198,7 @@ describe('chunk light attribute and materials', () => {
       expect(light?.normalized).toBe(true);
       expect(light?.array).toBeInstanceOf(Uint8Array);
       expect(light?.count).toBe(geometry?.getAttribute('position').count);
-      expect(Array.from(light?.array as Uint8Array)).toEqual(Array.from(section.light));
+      expect(prefixOf(light, section.light.length)).toEqual(Array.from(section.light));
     }
   });
 
@@ -253,51 +287,79 @@ describe('ChunkMeshRenderer resource lifecycle', () => {
     renderer.dispose();
   });
 
-  it('upsert of an existing chunk disposes the old geometries and replaces the meshes', () => {
+  it('upsert of an existing chunk disposes the old meshes and returns their geometries to the pool for reuse', () => {
     const scene = new THREE.Scene();
-    const renderer = new ChunkMeshRenderer(scene);
+    const pool = createChunkGeometryPool();
+    const renderer = new ChunkMeshRenderer(scene, pool);
     renderer.upsert(0, 0, stoneAndGlass(0));
     const old = meshesIn(scene);
+    const oldGeometries = old.map((m) => m.geometry);
     const disposed = countDisposals(old);
     renderer.upsert(0, 0, stoneAndGlass(0));
-    expect(disposed.count).toBe(2);
+    // Pooled geometries are never disposed on replace (each disposal leaks a VAO on WebGL2)...
+    expect(disposed.count).toBe(0);
+    // ...but the meshes are, so the renderer drops their RenderObjects.
     expect(disposed.objects).toBe(2);
     const current = meshesIn(scene);
     expect(current).toHaveLength(2);
     for (const mesh of current) {
       expect(old).not.toContain(mesh);
+      expect(oldGeometries).toContain(mesh.geometry);
     }
+    expect(pool.stats).toEqual({ inUse: 2, free: 0, created: 2, disposed: 0 });
     renderer.dispose();
   });
 
-  it('upsert with empty data disposes and removes the previous meshes', () => {
+  it('upsert with empty data removes the previous meshes and releases their geometries', () => {
     const scene = new THREE.Scene();
-    const renderer = new ChunkMeshRenderer(scene);
+    const pool = createChunkGeometryPool();
+    const renderer = new ChunkMeshRenderer(scene, pool);
     renderer.upsert(0, 0, stoneAndGlass(0));
     const disposed = countDisposals(meshesIn(scene));
     renderer.upsert(0, 0, meshChunk(soloNeighborhood(new Chunk(0, 0)), blockRegistry));
-    expect(disposed.count).toBe(2);
+    expect(disposed.count).toBe(0);
+    expect(disposed.objects).toBe(2);
     expect(meshesIn(scene)).toHaveLength(0);
+    expect(pool.stats).toMatchObject({ inUse: 0, free: 2 });
     renderer.dispose();
   });
 
-  it('remove disposes geometries, detaches meshes, and is a no-op for unknown chunks', () => {
+  it('remove releases geometries and disposes + detaches meshes (no-op for unknown chunks); dispose() disposes the pool', () => {
     const scene = new THREE.Scene();
-    const renderer = new ChunkMeshRenderer(scene);
+    const pool = createChunkGeometryPool();
+    const renderer = new ChunkMeshRenderer(scene, pool);
     renderer.upsert(0, 0, stoneAndGlass(0));
     renderer.upsert(1, 0, stoneAndGlass(1));
     const disposed = countDisposals(meshesIn(scene));
     renderer.remove(9, 9);
-    expect(disposed.count).toBe(0);
+    expect(disposed.objects).toBe(0);
     renderer.remove(0, 0);
-    expect(disposed.count).toBe(2);
+    expect(disposed.count).toBe(0);
     expect(disposed.objects).toBe(2);
+    expect(pool.stats).toMatchObject({ inUse: 2, free: 2 });
     expect(meshesIn(scene)).toHaveLength(2);
     renderer.remove(0, 0);
-    expect(disposed.count).toBe(2);
+    expect(disposed.objects).toBe(2);
     renderer.dispose();
     expect(disposed.count).toBe(4);
     expect(disposed.objects).toBe(4);
     expect(meshesIn(scene)).toHaveLength(0);
+    expect(pool.stats).toEqual({ inUse: 0, free: 0, created: 4, disposed: 4 });
+  });
+
+  it('streaming reuses geometries: remove + upsert of new chunks creates none once the pool is warm', () => {
+    const scene = new THREE.Scene();
+    const pool = createChunkGeometryPool();
+    const renderer = new ChunkMeshRenderer(scene, pool);
+    for (let cx = 0; cx < 4; cx += 1) {
+      renderer.upsert(cx, 0, stoneAndGlass(cx));
+    }
+    for (let step = 0; step < 20; step += 1) {
+      renderer.remove(step, 0);
+      renderer.upsert(step + 4, 0, stoneAndGlass(step + 4));
+    }
+    expect(pool.stats).toEqual({ inUse: 8, free: 0, created: 8, disposed: 0 });
+    expect(meshesIn(scene)).toHaveLength(8);
+    renderer.dispose();
   });
 });

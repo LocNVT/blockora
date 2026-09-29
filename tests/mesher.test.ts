@@ -474,6 +474,22 @@ describe('applyAtlasUvs', () => {
     const b = applyAtlasUvs(data.opaque.uvs, data.opaque.tiles, layout);
     expect(a).toEqual(b);
   });
+
+  it('writes into the prefix of a larger output array, leaving the rest untouched; rejects a too-small one', () => {
+    const chunk = new Chunk(0, 0);
+    chunk.setBlock(5, 5, 5, BlockId.Grass);
+    const data = meshChunk(soloNeighborhood(chunk), blockRegistry);
+    const layout = createAtlasLayout(TILE_NAMES.length);
+    const expected = applyAtlasUvs(data.opaque.uvs, data.opaque.tiles, layout);
+
+    const out = new Float32Array(expected.length + 4).fill(-1);
+    expect(applyAtlasUvs(data.opaque.uvs, data.opaque.tiles, layout, out)).toBe(out);
+    expect(Array.from(out.subarray(0, expected.length))).toEqual(Array.from(expected));
+    expect(Array.from(out.subarray(expected.length))).toEqual([-1, -1, -1, -1]);
+    expect(() =>
+      applyAtlasUvs(data.opaque.uvs, data.opaque.tiles, layout, new Float32Array(expected.length - 1)),
+    ).toThrow(RangeError);
+  });
 });
 
 describe('transparent blocks stay in the transparent section', () => {
