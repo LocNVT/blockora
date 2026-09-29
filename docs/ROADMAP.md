@@ -212,13 +212,13 @@ Close browser → reopen → world state remains.
 
 ## Profiling
 
-* [ ] FPS measurement
-* [ ] Frame time
-* [ ] Draw calls
-* [ ] Triangle count
-* [ ] Memory
-* [ ] Chunk generation time
-* [ ] Mesh generation time
+* [x] FPS measurement
+* [x] Frame time
+* [x] Draw calls
+* [x] Triangle count
+* [x] Memory
+* [x] Chunk generation time
+* [x] Mesh generation time
 
 ## Optimization
 

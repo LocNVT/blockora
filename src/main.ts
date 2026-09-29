@@ -23,6 +23,9 @@ import { Crosshair } from './ui/Crosshair';
 import { HealthHud } from './ui/HealthHud';
 import { HungerHud } from './ui/HungerHud';
 import { DeathScreen } from './ui/DeathScreen';
+import { DebugOverlay } from './ui/DebugOverlay';
+import { PerfStats, type PerfProbe } from './debug/PerfStats';
+import { readJsHeapMb, readRendererStats, type DebugSnapshot } from './debug/debugText';
 import { DayNightLighting } from './renderer/DayNightLighting';
 import { GameTime, daylightFactor } from './world/GameTime';
 import { blockRegistry } from './world/BlockRegistry';
@@ -87,6 +90,7 @@ interface BlockEditTargets {
   readonly chunkMeshRenderer: ChunkMeshRenderer;
   readonly meshBuffers: MeshBuffers;
   readonly edits: BlockEditStore;
+  readonly probe: PerfProbe;
 }
 
 /**
@@ -102,6 +106,7 @@ function commitBlockChange(change: BlockChange, targets: BlockEditTargets): void
     targets.chunkMeshRenderer,
     applyLightAndCollectRemesh(change, targets.light),
     targets.meshBuffers,
+    targets.probe,
   );
 }
 
@@ -187,6 +192,7 @@ async function bootstrap(): Promise<void> {
   const gameTime = new GameTime();
   const dayNightLighting = new DayNightLighting(sceneWithLights);
 
+  const perfStats = new PerfStats();
   const worldGenerator = new WorldGenerator(seed);
   const chunkStore = new ChunkStore();
   const lightEngine = new LightEngine(chunkStore, blockRegistry);
@@ -203,6 +209,7 @@ async function bootstrap(): Promise<void> {
     undefined,
     lightEngine,
     blockEdits,
+    perfStats,
   );
   // Only force-load a small area synchronously so there's solid ground under
   // the player before the first frame renders; the rest of renderDistance
@@ -210,11 +217,11 @@ async function bootstrap(): Promise<void> {
   // below, instead of stalling startup on the full render-distance area.
   // A loaded world resumes at the saved position; respawn still uses `spawn`.
   const startPosition = saved?.player.position ?? spawn.position;
-  const spawnChunkStart = performance.now();
+  const spawnChunkStart = perfStats.now();
   chunkManager.update(worldToChunkCoord(startPosition.x, startPosition.z));
   const spawnLoadStats = chunkManager.stats;
   console.info(
-    `[chunks] initial spawn load time=${(performance.now() - spawnChunkStart).toFixed(2)}ms ` +
+    `[chunks] initial spawn load time=${(perfStats.now() - spawnChunkStart).toFixed(2)}ms ` +
       `(chunks=${spawnLoadStats.chunksLoaded} generation=${spawnLoadStats.generationMs.toFixed(2)}ms ` +
       `light=${spawnLoadStats.lightMs.toFixed(2)}ms)`,
   );
@@ -241,6 +248,7 @@ async function bootstrap(): Promise<void> {
   const healthHud = new HealthHud(container);
   const hungerHud = new HungerHud(container);
   const deathScreen = new DeathScreen(container);
+  const debugOverlay = new DebugOverlay(container);
 
   const inventory = new Inventory();
   if (saved === null) {
@@ -269,6 +277,7 @@ async function bootstrap(): Promise<void> {
     chunkMeshRenderer,
     meshBuffers: editMeshBuffers,
     edits: blockEdits,
+    probe: perfStats,
   };
 
   const saveState: GameSaveState = {
@@ -421,6 +430,7 @@ async function bootstrap(): Promise<void> {
   deathScreen.onRespawn(respawn);
 
   renderer.setAnimationLoop((timestamp) => {
+    perfStats.markFrame();
     timer.update(timestamp);
     const dt = timer.getDelta();
 
@@ -479,6 +489,9 @@ async function bootstrap(): Promise<void> {
     chunkManager.update(worldToChunkCoord(playerState.position.x, playerState.position.z));
 
     const uiInput = input.consumeUiInput();
+    if (uiInput.toggleDebug) {
+      debugOverlay.toggle();
+    }
     if (playerHealth.isDead) {
       // Death already closed the inventory screen in handleDeath(); ignore
       // further toggle/close latches while dead so they don't reopen it.
@@ -667,6 +680,20 @@ async function bootstrap(): Promise<void> {
     saveScheduler?.update(dt);
 
     renderer.render(scene, camera);
+
+    // Read renderer.info *after* render(): its per-frame counters are reset by
+    // the animation loop before this callback runs.
+    debugOverlay.update(perfStats.now(), (): DebugSnapshot => ({
+      backend,
+      perf: perfStats.snapshot(),
+      renderer: readRendererStats(renderer.info),
+      jsHeapMb: readJsHeapMb(),
+      chunksLoaded: chunkStore.size,
+      mobCount: entityStore.count(),
+      position: playerState.position,
+      chunk: worldToChunkCoord(playerState.position.x, playerState.position.z),
+      renderDistance: WORLD_CONFIG.renderDistance,
+    }));
   });
 }
 

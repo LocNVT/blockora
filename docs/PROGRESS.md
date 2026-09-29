@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 8: measurement / debug overlay (not started).
+Phase 8: batch neighbour remeshes (optimisation 1).
 
 ---
 
@@ -169,6 +169,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
+* Profiling: mesh upload (`sink.upsert`) isn't timed separately (only visible in frame time); frame time includes vsync wait; headless numbers are software-GPU.
 * Villages: house floors sit on the highest footprint column + 1, so doorways can be 1–3 blocks above the path (player jump ≈ 0.69 blocks — may need a placed block to enter; not browser-verified); hostiles can spawn on house roofs at night; layout recomputed per chunk (no cache); no slope rule on paths; duplicate path segments where routes share columns.
 * Structures: one placement attempt per 6×6-chunk region (rejected site → empty region); ruins and dungeons share that roll, so ruins are ~half as frequent as before dungeons; dungeons are sealed (reached by digging or a crossing cave) and hostile spawns reach them only when the player is within ~12 blocks vertically; floor sits on the highest footprint column, so up to 3 blocks of foundation can show on slopes.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
@@ -250,6 +251,14 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 profiling: F3 debug overlay
+
+* `src/debug/`: `RollingWindow` (Float64Array ring, avg / max / p95, no per-push allocation), `PerfStats` (injected clock; FPS + frame avg / p95 / max over 120 frames; gen / light / mesh ms over 64 samples; per-second generated / meshed counters) behind a `PerfProbe` seam passed to `ChunkManager` and `remeshChunks`; pure `formatDebugLines` / `readRendererStats` / `readJsHeapMb`. `DEBUG_CONFIG`.
+* `src/ui/DebugOverlay.ts`: F3 toggle (preventDefault, pointer lock untouched), top-left monospace panel, 4 Hz refresh, nothing built while hidden. Shows backend, FPS, frame ms, draw calls, triangles, geometries / textures, JS heap, chunks loaded + gen/s + mesh/s, chunk gen / light / mesh ms, mobs, position / chunk, render distance. `renderer.info` read after `render()` (autoReset; same object for WebGPU and WebGL2).
+* Baseline (headless Chrome, SwiftShader software GPU — FPS not representative; CPU timings are): render distance 8, 289 chunks, 207–234 draw calls (~2 per chunk), 330–362 k triangles, heap ~150 MB, chunk gen ~3.8 ms + light ~0.5 ms + ~2.7 remeshes × ~2.5 ms ≈ 11 ms main-thread per new chunk; up to 4 loads / frame → ~45 ms loading frames.
+* Codex review PASS_WITH_NOTES (first round; `DebugOverlay.dispose()` isn't called — harmless without teardown).
+* Next optimisation (evidence): chunk streaming on the main thread is the bottleneck → batch neighbour remeshes, then move generation / light / meshing to a Web Worker with transferables. Greedy meshing after re-measuring on real hardware.
 
 ## 2026-09-30 — Phase 7 persistence (save format + IndexedDB) — Phase 7 complete
 
@@ -533,11 +542,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (63 files, 1069 tests)
+pnpm test → PASS (66 files, 1093 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 8 performance, measure first: F3 debug overlay (FPS, frame time, draw calls, triangles, geometry / texture counts, JS heap where available, loaded chunks, chunk gen / mesh time averages, mob count) from `renderer.info` + existing timing logs; then profile chunk streaming on the main thread and decide the Web Worker plan (CLAUDE.md §16) from the numbers.
+Phase 8 optimisation 1 (measured bottleneck: main-thread chunk streaming ≈ 11 ms / chunk): batch neighbour remeshes per frame (dedupe, remesh each dirty chunk once after the frame's loads) and re-measure with F3; then design the Web Worker pipeline (generation + light + meshing off the main thread, TypedArray transferables, main thread only uploads).
