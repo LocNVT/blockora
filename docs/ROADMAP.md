@@ -157,11 +157,11 @@ Basic survival loop works.
 
 # Phase 5 — Mobs
 
-* [ ] Entity system
-* [ ] Passive mobs
+* [x] Entity system
+* [x] Passive mobs
 * [ ] Hostile mobs
-* [ ] Spawn rules
-* [ ] Wander AI
+* [x] Spawn rules
+* [x] Wander AI
 * [ ] Target AI
 * [ ] Chase AI
 * [ ] Attack AI

@@ -5,6 +5,10 @@ import { createCamera, resizeCamera } from './renderer/camera';
 import { ChunkMeshRenderer, setChunkDaylight } from './renderer/chunkMeshes';
 import { BlockOutline } from './renderer/BlockOutline';
 import { ItemDropRenderer } from './renderer/ItemDropRenderer';
+import { MobRenderer } from './renderer/MobRenderer';
+import { EntityStore } from './entities/EntityStore';
+import { createMobSpawnTimer, updateMobs } from './entities/updateMobs';
+import { mulberry32 } from './entities/mobSpawning';
 import { createPlayerState } from './player/PlayerState';
 import { stepPlayer } from './player/playerPhysics';
 import { InputController } from './player/InputController';
@@ -214,6 +218,14 @@ async function bootstrap(): Promise<void> {
     const { cx, cz } = worldToChunkCoord(wx, wz);
     return chunkStore.hasChunk(cx, cz);
   };
+
+  // Mob seed is derived from the world seed so mob spawning/AI stays
+  // deterministic per world without colliding with world-gen's own noise seeds.
+  const MOB_RNG_SEED_OFFSET = 9001;
+  const entityStore = new EntityStore();
+  const mobRenderer = new MobRenderer(scene, chunkStore);
+  const mobSpawnTimer = createMobSpawnTimer();
+  const mobRng = mulberry32(WORLD_GEN_CONFIG.defaultSeed + MOB_RNG_SEED_OFFSET);
 
   const timer = new THREE.Timer();
   timer.connect(document);
@@ -486,6 +498,18 @@ async function bootstrap(): Promise<void> {
     const playerBox = playerAabb(playerState);
     drops.collect(playerBox, inventory);
     itemDropRenderer.update(drops.drops());
+
+    // Mobs keep simulating/rendering even while the player is dead (only
+    // player movement/actions are frozen above).
+    updateMobs(entityStore, dt, mobSpawnTimer, {
+      store: chunkStore,
+      registry: blockRegistry,
+      isSolid,
+      isFluid,
+      rng: mobRng,
+      playerPosition: playerState.position,
+    });
+    mobRenderer.update(entityStore.all(), dt);
 
     blockOutline.update(hit);
     hotbarHud.update(inventory);

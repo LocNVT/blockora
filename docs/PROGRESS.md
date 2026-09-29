@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 5: Entity system (not started).
+Phase 5: mob health/damage + player melee combat + drops.
 
 ---
 
@@ -88,7 +88,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 # Phase 5
 
-* [ ] Entity system
+* [x] Entity system
 * [ ] Passive mobs
 * [ ] Hostile mobs
 * [ ] AI
@@ -164,6 +164,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Light from an unloaded neighbour stays in surrounding chunks (stale only if the reloaded chunk differs).
 * Item drops use the lit standard material (stay bright in dark caves); lighting is flat per face (no smooth lighting / AO); chunk shader duplicates `src/renderer/lightShading.ts` math (keep in sync).
 * A greedy mesher must only merge faces with equal light.
+* Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
+* `mulberry32` is duplicated in `src/entities/mobSpawning.ts` and `src/world/texture/tileArt.ts`.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
 * `requiresTool` is tier-agnostic (any pickaxe harvests stone/ores); add `minTier` when iron tools exist.
@@ -243,6 +245,12 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-29 — Phase 5 entity system + passive pig
+
+* `src/entities/`: `EntityStore` (plain records, monotonic ids, swap-remove), data-driven `mobDefinitions` (Pig), `mobAI` (Idle ↔ Wander, seeded RNG), `mobPhysics` (gravity + shared `moveAabbThroughVoxels`, friction, 1-block auto-jump, avoids water / >3-block drops), `mobSpawning` (grass columns with 2 free cells and sky light ≥ 10, 24 blocks .. render edge, cap 12, despawn far/unloaded), `updateMobs` orchestrator. `MOB_CONFIG` / `PIG_CONFIG`.
+* `src/renderer/MobRenderer.ts`: blocky pig from boxes, one `InstancedMesh` per part (4 draw calls total), per-instance colour from sampled voxel light + daylight, leg swing from walked distance.
+* Verified in real Chrome (Playwright, temporary faster spawn config, reverted): pigs spawn on grass and render lit, no page errors.
 
 ## 2026-09-29 — Phase 4 dry-land spawn (Phase 4 complete)
 
@@ -469,11 +477,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (45 files, 808 tests)
+pnpm test → PASS (49 files, 842 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 5 entity system: minimal entity store (typed data + per-type systems, no giant manager), AABB physics reusing `moveAabbThroughVoxels`, spawn/despawn around the player, one passive mob to prove it.
+Phase 5 combat: mob health + hurt/knockback + death, player melee (LMB on a mob via entity raycast before block raycast, damage by held item), Flee state for passive mobs when hit, drops on death (raw pork item as food).
