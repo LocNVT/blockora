@@ -8,7 +8,12 @@ export interface Vec3 {
   z: number;
 }
 
-export type AiState = 'idle' | 'wander' | 'flee';
+/**
+ * 'chase' merges CLAUDE.md's Target (acquire) and Chase steps: acquiring the
+ * player simply flips idle/wander -> chase in one tick. 'chase' and 'attack'
+ * are hostile-only.
+ */
+export type AiState = 'idle' | 'wander' | 'flee' | 'chase' | 'attack';
 
 /** Small AI scratch state, mutated in place by mobAI.ts. */
 export interface MobAiState {
@@ -38,6 +43,8 @@ export interface MobEntity {
   hurtFlashTimer: number;
   /** True from a hit until the mob lands again: physics keeps the knockback velocity instead of steering (see `damageMob`). */
   knockedBack: boolean;
+  /** Seconds until a hostile mob may strike again (0 = ready); unused by passive mobs. */
+  attackTimer: number;
 }
 
 /**
@@ -66,6 +73,7 @@ export class EntityStore {
       hurtTimer: 0,
       hurtFlashTimer: 0,
       knockedBack: false,
+      attackTimer: 0,
     };
     this.nextId += 1;
     this.indexById.set(entity.id, this.entities.length);

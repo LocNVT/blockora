@@ -120,8 +120,13 @@ export function updateMobPhysics(
 
   let moveX = 0;
   let moveZ = 0;
-  if (mob.ai.state === 'wander' || mob.ai.state === 'flee') {
-    const speed = mob.ai.state === 'flee' ? fleeSpeed : walkSpeed;
+  if (
+    mob.ai.state === 'wander' ||
+    mob.ai.state === 'flee' ||
+    (mob.ai.state === 'chase' && def.hostile !== null)
+  ) {
+    const speed =
+      mob.ai.state === 'flee' ? fleeSpeed : mob.ai.state === 'chase' && def.hostile !== null ? def.hostile.chaseSpeed : walkSpeed;
     const blockedByHazard = mob.onGround && aheadIsUnsafe(mob.position, mob.yaw, isSolid, isFluid);
     if (!blockedByHazard) {
       moveX = -Math.sin(mob.yaw) * speed;

@@ -2,7 +2,7 @@ import type { MobEntity, Vec3 } from './EntityStore';
 import type { MobDefinition } from './mobDefinitions';
 import type { ToolProperties } from '../items/items';
 import { COMBAT_CONFIG } from '../config/constants';
-import type { Rng } from './mobAI';
+import { yawToward, type Rng } from './mobAI';
 
 /**
  * Damage a hand or held tool deals in one melee attack. Bare hand (no tool)
@@ -36,8 +36,9 @@ export interface DamageMobResult {
  * - applies horizontal + vertical knockback to `mob.velocity`, directed
  *   away from `sourcePos` (falls back to the mob's current -yaw direction if
  *   `sourcePos` is exactly at the mob's position, so knockback is never zero)
- * - if not killed, switches AI to 'flee' for `def.fleeDuration` seconds, with
- *   `targetYaw` set to face away from `sourcePos`
+ * - if not killed and passive, switches AI to 'flee' for `def.fleeDuration`
+ *   seconds, with `targetYaw` set to face away from `sourcePos`; a hostile mob
+ *   never flees, it switches to 'chase' facing `sourcePos` instead
  * Pure aside from mutating `mob` in place; deterministic given the same inputs.
  */
 export function damageMob(
@@ -81,7 +82,10 @@ export function damageMob(
   mob.knockedBack = true;
   mob.onGround = false;
 
-  if (!killed) {
+  if (!killed && def.hostile !== null) {
+    mob.ai.state = 'chase';
+    mob.ai.targetYaw = yawToward(mob.position.x, mob.position.z, sourcePos.x, sourcePos.z);
+  } else if (!killed) {
     mob.ai.state = 'flee';
     mob.ai.timer = def.fleeDuration;
     // Away-facing yaw: mobPhysics moves along -sin(yaw)/-cos(yaw), matching

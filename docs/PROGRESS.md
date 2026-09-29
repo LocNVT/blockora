@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-**Phase 5 — Mobs**
+**Phase 6 — Structures**
 
 ## Current Task
 
-Phase 5: hostile mob (zombie-like) with Target / Chase / Attack AI.
+Phase 6: structure system (not started).
 
 ---
 
@@ -90,8 +90,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 * [x] Entity system
 * [x] Passive mobs
-* [ ] Hostile mobs
-* [ ] AI (Idle/Wander/Flee done; Target/Chase/Attack pending)
+* [x] Hostile mobs
+* [x] AI
 * [x] Combat
 * [x] Drops
 
@@ -166,6 +166,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * A greedy mesher must only merge faces with equal light.
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
+* Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * `mulberry32` is duplicated in `src/entities/mobSpawning.ts` and `src/world/texture/tileArt.ts`.
 * Crosshair stays faintly visible through the inventory panel; Chest has no container UI yet (only Crafting Table has a use action).
 * Outline (thin dark lines) is subtle against dark textures; tune `RENDER_CONFIG.blockOutlineColor` in Phase 9.
@@ -246,6 +247,14 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-29 — Phase 5 hostile mob (Shambler) — Phase 5 complete
+
+* `MobType.Shambler` (original zombie-like, `SHAMBLER_CONFIG`: 20 HP, chase 2.0, attack 3 dmg / 1.0 s cooldown / 0.5 s windup, reach 1.2 horizontal + 1.5 vertical, detect 16 / lose 24). `MobDefinition.hostile` stats.
+* AI: 'target' merged into 'chase' (acquisition is the idle/wander → chase tick); chase → attack in reach with a clear chest-to-chest voxel ray; damage via injected `onAttackPlayer` port (main.ts → `PlayerHealth.damage`); drops target when the player dies or leaves 24 blocks; hostiles chase the attacker when hit instead of fleeing.
+* Spawning: effective light ≤ 7 (night surface, or dark caves any time via a downward scan), separate cap 8; daylight despawn in open sky light. `MobRenderer`: 4 more instanced part meshes (≤ 8 mob draw calls total).
+* Fixes from Codex review: cave scan stopped at a lit surface above a dark cave; shamblers could attack through block corners. Both have regression tests.
+* Verified in real Chrome (Playwright, temporary QA hook, removed): night spawns, chase, player hearts 20 → 17 → 14, killed by melee, no page errors.
 
 ## 2026-09-29 — Phase 5 mob combat + drops
 
@@ -485,11 +494,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (52 files, 896 tests)
+pnpm test → PASS (53 files, 923 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 5 hostile mob: zombie-like mob definition + renderer parts, Target (acquire player within range) → Chase (steer toward player, reuse physics/auto-jump) → Attack (melee player on contact with cooldown, via PlayerHealth damage) states, spawns only in low light (night / caves), burns or despawns in daylight kept simple.
+Phase 6 structure system: data-driven structure templates (block palettes + offsets) placed deterministically per seed + chunk region during generation, chunk-border-safe (a structure spanning several chunks writes only the blocks inside the chunk being generated), first structure = small ruin; then loot chests.
