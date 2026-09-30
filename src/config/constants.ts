@@ -59,6 +59,11 @@ export const SETTINGS_CONFIG = {
   mouseSensitivity: { min: 0.25, max: 3, step: 0.05 },
   /** Rendered radius in chunks. */
   renderDistance: { min: 2, max: 12, step: 1 },
+  /** Audio volumes, percent (0 = silent, 100 = full). */
+  volume: { min: 0, max: 100, step: 1 },
+  defaultMasterVolume: 80,
+  defaultEffectsVolume: 100,
+  defaultAmbientVolume: 60,
 } as const;
 
 export const PAUSE_CONFIG = {
@@ -566,4 +571,44 @@ export const DEBUG_CONFIG = {
   overlayUpdateHz: 4,
   /** Length (ms) of the per-second counter buckets. */
   counterPeriodMs: 1000,
+} as const;
+
+export const AUDIO_CONFIG = {
+  /** Simultaneous sound voices; the oldest is stolen beyond this. */
+  maxVoices: 16,
+  /** Seconds of the shared white-noise buffer (generated once, reused with random start offsets). */
+  noiseSeconds: 2,
+  /** Distance (blocks) up to which a positional sound is at full level. */
+  referenceDistance: 2,
+  /** Distance (blocks) beyond which a positional sound is inaudible (and skipped). */
+  maxHearingDistance: 24,
+  /** Extra level factor for a sound directly behind the listener (0..1; 1 = none). */
+  behindGain: 0.8,
+  /** How far below the feet (blocks) the surface block is probed for footstep / jump / land sounds. */
+  surfaceProbeDepth: 0.2,
+  /** Horizontal blocks walked per footstep. */
+  strideWalk: 1.7,
+  strideSprint: 2.1,
+  strideCrouch: 1.3,
+  /** Footstep level multiplier while crouching. */
+  crouchStepGain: 0.4,
+  /** Downward speed (blocks/s) below which touching the ground makes no landing sound. */
+  landMinSpeed: 4,
+  /** Downward speed (blocks/s) at which the landing sound reaches full level. */
+  landFullSpeed: 20,
+  /** Seconds between bite sounds while eating. */
+  eatBiteInterval: 0.28,
+  /** Seconds between a mob's occasional idle sounds (random in [min, max]) across all nearby mobs. */
+  mobIdleIntervalMin: 3,
+  mobIdleIntervalMax: 9,
+  /** Ambient wind bed peak level (0..1) before the volume settings. */
+  ambientMaxLevel: 0.14,
+  /** Seconds the ambient level takes to follow daylight / sky light. */
+  ambientSmoothingSeconds: 1.5,
+  /** Seconds between ambient level updates. */
+  ambientUpdateInterval: 0.25,
+  /** Ambient level factor deep in a cave (sky light 0). */
+  ambientCaveFactor: 0.15,
+  /** Level scale for the whole effects bus. */
+  effectsBusLevel: 0.9,
 } as const;

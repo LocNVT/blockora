@@ -13,9 +13,17 @@ const SETTINGS_SCREEN_STYLE = {
   buttonHoverBackground: 'rgba(255, 255, 255, 0.28)',
 } as const;
 
+type SliderKey =
+  | 'fov'
+  | 'mouseSensitivity'
+  | 'renderDistance'
+  | 'masterVolume'
+  | 'effectsVolume'
+  | 'ambientVolume';
+
 /** Slider-backed numeric settings: key, label and how the live value is printed. */
 interface SliderSpec {
-  readonly key: 'fov' | 'mouseSensitivity' | 'renderDistance';
+  readonly key: SliderKey;
   readonly label: string;
   readonly range: { readonly min: number; readonly max: number; readonly step: number };
   readonly format: (value: number) => string;
@@ -25,6 +33,10 @@ interface SliderSpec {
    * The label still updates while dragging.
    */
   readonly applyOnRelease?: boolean;
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
 }
 
 const SLIDERS: readonly SliderSpec[] = [
@@ -42,6 +54,9 @@ const SLIDERS: readonly SliderSpec[] = [
     format: (v) => `${v} chunks`,
     applyOnRelease: true,
   },
+  { key: 'masterVolume', label: 'Master volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
+  { key: 'effectsVolume', label: 'Effects volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
+  { key: 'ambientVolume', label: 'Ambient volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
 ];
 
 interface SliderRow {
@@ -52,7 +67,7 @@ interface SliderRow {
 
 /**
  * Settings overlay opened from the pause menu: sliders for FOV, mouse
- * sensitivity and render distance (live value labels), an FPS-counter toggle
+ * sensitivity, render distance and the three volumes (live value labels), an FPS-counter toggle
  * and a Back button. Every change is reported immediately through `onChange`;
  * applying and persisting is the caller's job.
  */
@@ -160,6 +175,9 @@ export class SettingsScreen {
   gap: 16px;
   width: ${s.panelWidthPx}px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
   padding: 24px 32px;
   background: ${s.panelBackground};
   border: 2px solid ${s.panelBorder};
@@ -219,7 +237,14 @@ export class SettingsScreen {
   }
 
   private read(): GameSettings {
-    const numbers: Record<SliderSpec['key'], number> = { fov: 0, mouseSensitivity: 0, renderDistance: 0 };
+    const numbers: Record<SliderKey, number> = {
+      fov: 0,
+      mouseSensitivity: 0,
+      renderDistance: 0,
+      masterVolume: 0,
+      effectsVolume: 0,
+      ambientVolume: 0,
+    };
     for (const { spec, input } of this.rows) {
       numbers[spec.key] = Number(input.value);
     }
