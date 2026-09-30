@@ -4,6 +4,8 @@ import { computeFogRange } from './backend';
 
 export interface SceneWithLights {
   scene: THREE.Scene;
+  /** The distance fog instance (also `scene.fog` while fog is enabled). */
+  fog: THREE.Fog;
   hemisphereLight: THREE.HemisphereLight;
   directionalLight: THREE.DirectionalLight;
 }
@@ -20,7 +22,8 @@ export function createScene(): SceneWithLights {
   scene.background = new THREE.Color(RENDER_CONFIG.skyColor);
 
   const { near, far } = computeFogRange();
-  scene.fog = new THREE.Fog(RENDER_CONFIG.skyColor, near, far);
+  const fog = new THREE.Fog(RENDER_CONFIG.skyColor, near, far);
+  scene.fog = fog;
 
   const hemisphereLight = new THREE.HemisphereLight(
     RENDER_CONFIG.hemisphereSkyColor,
@@ -40,5 +43,5 @@ export function createScene(): SceneWithLights {
   // repositions this target to follow the player each frame.
   scene.add(directionalLight.target);
 
-  return { scene, hemisphereLight, directionalLight };
+  return { scene, fog, hemisphereLight, directionalLight };
 }

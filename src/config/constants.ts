@@ -64,6 +64,22 @@ export const SETTINGS_CONFIG = {
   defaultMasterVolume: 80,
   defaultEffectsVolume: 100,
   defaultAmbientVolume: 60,
+  /** Internal render resolution as a percent of the native (capped) pixel ratio. */
+  resolutionScale: { min: 50, max: 100, step: 5 },
+  defaultResolutionScale: 100,
+  defaultFogEnabled: true,
+  /** Selectable frame-rate caps in fps; 0 = unlimited (display refresh / vsync). */
+  frameRateCaps: [0, 60, 30] as readonly number[],
+  defaultFrameRateCap: 0,
+} as const;
+
+export const GRAPHICS_CONFIG = {
+  /** The device pixel ratio is capped here before the resolution scale is applied. */
+  maxPixelRatio: 2,
+  /** The effective pixel ratio never drops below this. */
+  minPixelRatio: 0.25,
+  /** A frame renders when its time credit is within this many seconds of one cap interval (absorbs vsync jitter). */
+  frameCapToleranceSeconds: 0.002,
 } as const;
 
 export const PAUSE_CONFIG = {

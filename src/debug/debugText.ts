@@ -60,6 +60,13 @@ export interface DebugSnapshot {
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
   readonly chunk: { readonly cx: number; readonly cz: number };
   readonly renderDistance: number;
+  /** Internal drawing-buffer size and pixel ratio (optional; adds a line when present). */
+  readonly resolution?: {
+    readonly width: number;
+    readonly height: number;
+    readonly pixelRatio: number;
+    readonly scalePercent: number;
+  };
 }
 
 const NA = 'n/a';
@@ -102,6 +109,12 @@ export function formatDebugLines(s: DebugSnapshot): string[] {
     `Pos ${fixed(s.position.x, 1)} ${fixed(s.position.y, 1)} ${fixed(s.position.z, 1)}  chunk (${s.chunk.cx}, ${s.chunk.cz})`,
     `Render distance ${s.renderDistance} chunks`,
   ];
+  const r = s.resolution;
+  if (r !== undefined) {
+    lines.push(
+      `Resolution ${formatInt(r.width)}x${formatInt(r.height)}  ratio ${fixed(r.pixelRatio, 2)} (${formatInt(r.scalePercent)}%)`,
+    );
+  }
   const q = s.chunkStreaming;
   if (q !== undefined) {
     // After the "Chunk ms" line: gen ms above is measured where generation runs.

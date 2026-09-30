@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 9: graphics settings + better textures.
+Phase 9: better textures.
 
 ---
 
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Graphics: fog-off through a real day/night change and the 60 FPS cap are unit-tested only (headless is paused / below 60 FPS); fog off shows chunk streaming edges; a capped first frame may wait one interval; the limiter's 2 ms jitter tolerance lets a display refresh just above the cap (e.g. 62 Hz vs cap 60) render every callback (~3 % over; Codex minor, kept for vsync jitter at common rates).
 * Errors: a frame-failure save flush may store a partially updated frame; errors on the title screen count as pre-first-frame (fatal); after a window-event fatal, bootstrap may keep running under the overlay; banners can briefly overlap; the precompile-failure warning stays console-only.
 * Audio: timbres are untuned (never listened to); one shared mob-idle timer; only Pig / Shambler have sounds; voice stealing hard-cuts the oldest voice.
 * Pause / menu: headless Chrome can't grant pointer lock (tests fake the lock state); the "unavailable storage" title state is unit-tested only; no 3D title background; switching worlds reloads the page (world built once per page load); the pool may retain free geometries after shrinking render distance;
@@ -267,6 +268,11 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 graphics settings
+
+* Settings (same storage key; old records load defaults): `resolutionScale` 50–100 % (step 5, applied on release) → `renderer.setPixelRatio(scale × min(devicePixelRatio, 2))` + resize (`src/renderer/resolution.ts`; F3 shows the internal resolution); `fogEnabled` → `scene.fog = null` / the same Fog instance restored with the current range (day/night already skips a null fog); `frameRateCap` unlimited / 60 / 30 → `src/renderer/frameLimiter.ts` time-credit gate (2 ms tolerance, rendered frame gets the accumulated dt, no catch-up burst after long pauses; skipped callbacks do no simulation / audio / render). `GRAPHICS_CONFIG`.
+* Verified in real Chrome: canvas 800×500 → 600×375 → 400×250 at 100 / 75 / 50 % (and 1600×1000 … at DPR 2); fog off keeps distant terrain sharp; cap 30 renders exactly half of 60 rAF/s; settings persist across reload; no page errors. Codex review PASS_WITH_NOTES (first round).
 
 ## 2026-09-30 — Phase 9 error handling
 
@@ -620,11 +626,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (79 files, 1283 tests)
+pnpm test → PASS (80 files, 1301 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9 remaining: graphics settings (fog toggle / distance, max FPS or "reduce motion" style options that actually exist in the renderer — no fake toggles) and better textures (refine the procedural tile art: clearer ore speckles, grass side overhang, less noisy stone; keep 16×16 atlas, original art). Then check Phase 9 is complete and move to Phase 10 (web deployment).
+Phase 9: better textures (refine the procedural 16×16 tile art — clearer ore speckles, grass-side overhang, less noisy stone / dirt, readable planks / wood grain, leaves with holes; original art, same atlas layout / UVs), then verify Phase 9 is complete and start Phase 10 (web deployment).

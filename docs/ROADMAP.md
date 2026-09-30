@@ -258,7 +258,7 @@ on a reasonable desktop.
 * [x] Mouse sensitivity
 * [x] Render distance
 * [x] Audio settings
-* [ ] Graphics settings
+* [x] Graphics settings
 * [x] Debug screen
 * [x] Loading screen
 * [x] Error handling
