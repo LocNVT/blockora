@@ -95,3 +95,52 @@ describe('SaveScheduler', () => {
     expect(throwing.saving).toBe(false);
   });
 });
+
+describe('SaveScheduler.flushAndWait', () => {
+  it('resolves true once the save finishes', async () => {
+    const t = controllableTask();
+    const s = new SaveScheduler(10, t.task, () => false, () => {});
+    let result: boolean | null = null;
+    void s.flushAndWait().then((ok) => {
+      result = ok;
+    });
+    expect(t.calls).toBe(1);
+    await settle();
+    expect(result).toBeNull();
+    t.resolve();
+    await settle();
+    expect(result).toBe(true);
+  });
+
+  it('resolves false (and reports the error) when the save fails, without rejecting', async () => {
+    const t = controllableTask();
+    const errors: unknown[] = [];
+    const s = new SaveScheduler(10, t.task, () => false, (e) => errors.push(e));
+    let result: boolean | null = null;
+    void s.flushAndWait().then((ok) => {
+      result = ok;
+    });
+    t.reject(new Error('disk full'));
+    await settle();
+    expect(result).toBe(false);
+    expect(errors).toHaveLength(1);
+  });
+
+  it('when a save is already running it waits for the follow-up save that covers the request', async () => {
+    const t = controllableTask();
+    const s = new SaveScheduler(10, t.task, () => false, () => {});
+    s.flush();
+    let result: boolean | null = null;
+    void s.flushAndWait().then((ok) => {
+      result = ok;
+    });
+    expect(t.calls).toBe(1);
+    t.resolve();
+    await settle();
+    expect(t.calls).toBe(2);
+    expect(result).toBeNull();
+    t.resolve();
+    await settle();
+    expect(result).toBe(true);
+  });
+});

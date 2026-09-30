@@ -252,14 +252,14 @@ on a reasonable desktop.
 # Phase 9 — UX & Polish
 
 * [ ] Main menu
-* [ ] Pause menu
-* [ ] Settings
-* [ ] FOV
-* [ ] Mouse sensitivity
-* [ ] Render distance
+* [x] Pause menu
+* [x] Settings
+* [x] FOV
+* [x] Mouse sensitivity
+* [x] Render distance
 * [ ] Audio settings
 * [ ] Graphics settings
-* [ ] Debug screen
+* [x] Debug screen
 * [ ] Loading screen
 * [ ] Error handling
 * [ ] Better textures

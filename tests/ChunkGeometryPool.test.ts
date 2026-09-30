@@ -13,7 +13,7 @@ import {
   poolCapacity,
   type ChunkGeometryPoolOptions,
 } from '../src/renderer/ChunkGeometryPool';
-import { CHUNK_GEOMETRY_POOL_CONFIG, WORLD_CONFIG } from '../src/config/constants';
+import { CHUNK_GEOMETRY_POOL_CONFIG, SETTINGS_CONFIG } from '../src/config/constants';
 
 const layout = createAtlasLayout(16);
 
@@ -96,8 +96,8 @@ describe('poolCapacity', () => {
     ).toThrow(RangeError);
   });
 
-  it('keeps enough free geometries for a whole rendered area (2 sections per chunk)', () => {
-    const rendered = (2 * WORLD_CONFIG.renderDistance + 1) ** 2;
+  it('keeps enough free geometries for a whole rendered area at the max render distance (2 sections per chunk)', () => {
+    const rendered = (2 * SETTINGS_CONFIG.renderDistance.max + 1) ** 2;
     expect(CHUNK_GEOMETRY_POOL_CONFIG.maxFreeGeometries).toBe(rendered * 2);
   });
 });
