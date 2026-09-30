@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-**Phase 8 — Performance**
+**Phase 9 — UX & Polish**
 
 ## Current Task
 
-Phase 8 wrap-up: decide greedy meshing / occlusion vs moving to Phase 9.
+Phase 9: pause menu + settings (not started).
 
 ---
 
@@ -192,6 +192,16 @@ None.
 ---
 
 # Decisions
+
+## 2026-09-30
+
+### Defer greedy meshing / occlusion culling (user-approved)
+
+Phase 8's remaining items (greedy meshing, chunk / cave occlusion culling, chunk cache) stay open in ROADMAP and are deferred until real-hardware GPU numbers (F3 overlay) show the GPU is the bottleneck; development moves to Phase 9.
+
+Reason:
+
+The measured main-thread bottlenecks are fixed (worker generation, streaming budget, leaks); headless runs use a software GPU, so they can't justify a large rendering change (greedy meshing needs a texture-array / tiling approach for merged faces).
 
 ## 2026-09-29
 
@@ -582,4 +592,4 @@ pnpm test → PASS (71 files, 1161 tests)
 
 # Next Task
 
-Phase 8 remaining: greedy meshing (light-aware: merge only equal-light, equal-tile faces; needs the atlas UV approach to support tiling across merged quads — decide texture arrays / shader repeat vs per-tile UV wrap) and chunk culling beyond three's per-object frustum culling (cave / underground occlusion) — both should be justified by real-hardware GPU numbers first; if no real hardware is available, move to Phase 9 (UX & polish) and keep these open.
+Phase 9: pause menu (Esc while playing → Resume / Settings / Save & quit to title placeholder) + settings screen (FOV, mouse sensitivity, render distance, show FPS/F3 hint) persisted per browser (small settings record; world data stays in IndexedDB), applied live; then main menu with Continue / New world (random seed, confirm before replacing the existing save) and a loading screen.
