@@ -1,5 +1,6 @@
 import { WebGPURenderer } from 'three/webgpu';
 import { chooseBackend, type RendererBackend } from './backend';
+import { RendererInitError, RendererUnavailableError } from '../errors/errorTypes';
 
 /** Narrow local view of the WebGPU navigator API (no @webgpu/types dependency). */
 interface GPUNavigator {
@@ -49,9 +50,7 @@ export async function createRenderer(): Promise<CreatedRenderer> {
   const backend = chooseBackend(hasAdapter);
 
   if (backend === 'webgl2' && !hasWebGL2()) {
-    throw new Error(
-      'No supported graphics backend available: WebGPU adapter not found and WebGL2 is unsupported.'
-    );
+    throw new RendererUnavailableError();
   }
 
   const renderer = new WebGPURenderer({
@@ -59,7 +58,14 @@ export async function createRenderer(): Promise<CreatedRenderer> {
     forceWebGL: backend === 'webgl2',
   });
 
-  await renderer.init();
+  try {
+    await renderer.init();
+  } catch (error) {
+    throw new RendererInitError(
+      `Renderer initialisation failed (${backend}): ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);

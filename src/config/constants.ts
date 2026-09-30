@@ -280,8 +280,12 @@ export const SAVE_CONFIG = {
   databaseVersion: 1,
   /** Seconds between autosave checks; a save is written only when something changed. */
   autosaveIntervalSeconds: 10,
-  /** Give up opening IndexedDB after this long (ms) and run without saving. */
-  openTimeoutMs: 3000,
+  /**
+   * Give up opening IndexedDB after this long (ms) and run without saving.
+   * Generous on purpose: a cold first open can take seconds, and a false
+   * timeout hides an existing save (title shows "Saving unavailable").
+   */
+  openTimeoutMs: 10_000,
 } as const;
 
 export const TOOL_CONFIG = {

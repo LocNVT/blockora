@@ -1,39 +1,20 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1261 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Codex returned a short verdict, reproduced below without additions. Validation: 1283 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
-Task: Phase 9 — audio
+Task:
+Phase 9: error handling
 
-Summary: Audio events, procedural sound recipes, volume settings, and ambient audio are integrated. I found no concrete critical or important issues in the reviewed diff.
+Codex verbatim:
 
-Critical:
-- None
+> The review found no concrete critical or important issues. Two minor notes:
+>
+> - The frame error says the world was saved, but saving is only best-effort and may be skipped after a prior save failure.
+> - `saveFailing` never resets after a later successful save, so a subsequent frame failure skips another flush.
 
-Important:
-- None
+Follow-up (Claude): both minor notes fixed before commit — frame-failure wording now "Progress since the last autosave may be lost" (regression test), and a successful save clears `saveFailing`.
 
-Minor:
-- The tests cover recipe selection and pure audio logic, but do not exercise Web Audio graph creation, voice cleanup, or suspend/resume behavior.
-
-Required fixes:
-- None
-
-Tests:
-- The added tests cover settings compatibility, event tracking, sound selection, and recipe bounds. I did not run tests.
-
-Architecture:
-- Audio is isolated from gameplay systems through game events, consistent with the project’s modularity guidance.
-
-Performance:
-- Voice count is capped, noise data is shared, and ambient updates are throttled.
-
-Reviewed files:
-- `CLAUDE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`
-- Current diff
-- `src/main.ts`, `src/config/constants.ts`, `src/settings/GameSettings.ts`, `src/ui/SettingsScreen.ts`
-- `src/audio/*`, `src/events/*`
-- `tests/settings.test.ts`, `tests/audioLogic.test.ts`, `tests/audioRecipes.test.ts`
-
-Recommendation: Continue.
+Recommendation:
+Continue

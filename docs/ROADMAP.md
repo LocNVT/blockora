@@ -261,7 +261,7 @@ on a reasonable desktop.
 * [ ] Graphics settings
 * [x] Debug screen
 * [x] Loading screen
-* [ ] Error handling
+* [x] Error handling
 * [ ] Better textures
 * [x] Sound effects
 * [x] Ambient audio

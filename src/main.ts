@@ -25,6 +25,9 @@ import { DeathScreen } from './ui/DeathScreen';
 import { DebugOverlay } from './ui/DebugOverlay';
 import { FpsCounter } from './ui/FpsCounter';
 import { PauseMenu } from './ui/PauseMenu';
+import { showBanner, showFatalError } from './ui/ErrorScreen';
+import { ErrorCoordinator, isBenignWindowMessage } from './errors/ErrorCoordinator';
+import { guardFrame } from './errors/frameGuard';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { MainMenu } from './ui/MainMenu';
 import { LoadingScreen } from './ui/LoadingScreen';
@@ -271,6 +274,16 @@ function runTitleScreen(
   });
 }
 
+/** Central error policy; see ErrorCoordinator for the fatal vs banner rule. */
+const errors = new ErrorCoordinator(
+  {
+    showFatal: showFatalError,
+    showBanner,
+    log: (message, error) => console.error(message, error),
+  },
+  { userAgent: navigator.userAgent, buildMode: import.meta.env.MODE },
+);
+
 async function bootstrap(): Promise<void> {
   validateBlockTextures(blockRegistry, TILE_NAMES);
 
@@ -279,7 +292,15 @@ async function bootstrap(): Promise<void> {
     throw new Error('App container not found');
   }
 
-  const { renderer, backend } = await createRenderer();
+  let created: Awaited<ReturnType<typeof createRenderer>>;
+  try {
+    created = await createRenderer();
+  } catch (error) {
+    errors.fatal(error, 'renderer-init');
+    return;
+  }
+  const { renderer, backend } = created;
+  errors.setBackend(backend);
   console.info(`[renderer] using backend: ${backend}`);
   container.appendChild(renderer.domElement);
 
@@ -300,6 +321,9 @@ async function bootstrap(): Promise<void> {
       window.removeEventListener('pointerdown', unlockAudio, true);
       window.removeEventListener('keydown', unlockAudio, true);
     }
+    if (audio.status === 'unavailable') {
+      errors.warn('audio-unavailable', 'Audio is unavailable in this browser; the game will be silent.');
+    }
   };
   window.addEventListener('pointerdown', unlockAudio, true);
   window.addEventListener('keydown', unlockAudio, true);
@@ -313,7 +337,13 @@ async function bootstrap(): Promise<void> {
   // is generated. A save that cannot be read blocks Continue; New world (after
   // a confirm) clears it, so it is never overwritten silently.
   const saveStore = await openSaveStore();
+  if (saveStore === null) {
+    errors.warn('save-unavailable', 'Saving is unavailable in this browser. Your progress will not be kept.');
+  }
   const storedLoad = await loadSave(saveStore);
+  if (storedLoad.status === 'blocked') {
+    errors.warn('save-blocked', 'Your saved world could not be read, so saving is disabled for this session.');
+  }
   const start = await runTitleScreen(
     container,
     settings,
@@ -367,7 +397,9 @@ async function bootstrap(): Promise<void> {
     blockEdits,
     perfStats,
     {
-      service: createChunkGenerationService(worldGenerator),
+      service: createChunkGenerationService(worldGenerator, () =>
+        errors.warn('chunk-worker', 'Chunk generation fell back to the main thread; the game may run slower.'),
+      ),
       frameBudgetMs: CHUNK_STREAMING_CONFIG.frameBudgetMs,
       outerRing: CHUNK_STREAMING_CONFIG.outerRing,
     },
@@ -460,14 +492,23 @@ async function bootstrap(): Promise<void> {
   }
   let lastHealth = playerHealth.health;
   const worldSaver = createWorldSaver(saveStore, loadResult, saveState, blockEdits);
+  let saveFailing = false;
   const saveScheduler =
     worldSaver === null
       ? null
       : new SaveScheduler(
           SAVE_CONFIG.autosaveIntervalSeconds,
-          () => worldSaver.save(),
+          // A successful save clears the failure flag, so a later frame failure flushes again.
+          () =>
+            worldSaver.save().then(() => {
+              saveFailing = false;
+            }),
           () => worldSaver.isDirty(),
-          (error: unknown) => console.warn('[save] saving the world failed; will retry.', error),
+          (error: unknown) => {
+            saveFailing = true;
+            console.warn('[save] saving the world failed; will retry.', error);
+            errors.warn('save-failed', 'Saving the world failed. The game will keep retrying.');
+          },
         );
   if (saveScheduler !== null) {
     // Flush when the tab is hidden or the page goes away; the snapshot and the
@@ -700,7 +741,23 @@ async function bootstrap(): Promise<void> {
   await enterLoadingStage(loading, 'first-frame');
   let loadingHidden = false;
 
-  renderer.setAnimationLoop((timestamp) => {
+  const onFrameFailure = (error: unknown): void => {
+    try {
+      renderer.setAnimationLoop(null);
+    } catch {
+      // Stopping is best effort; the guard already ignores further frames.
+    }
+    try {
+      if (saveScheduler !== null && !saveFailing) {
+        saveScheduler.flush();
+      }
+    } catch {
+      // Best-effort save; never throw from the error path.
+    }
+    errors.fatal(error, 'frame');
+  };
+
+  renderer.setAnimationLoop(guardFrame((timestamp) => {
     perfStats.markFrame();
     timer.update(timestamp);
     const frameDt = timer.getDelta();
@@ -1055,6 +1112,7 @@ async function bootstrap(): Promise<void> {
       // First frame is on screen: the world is ready and the pause menu (Click to play) takes over.
       loadingHidden = true;
       loading.hide();
+      errors.markFirstFrame();
     }
 
     // Read renderer.info *after* render(): its per-frame counters are reset by
@@ -1071,14 +1129,16 @@ async function bootstrap(): Promise<void> {
       chunk: worldToChunkCoord(playerState.position.x, playerState.position.z),
       renderDistance: settings.renderDistance,
     }));
-  });
+  }, onFrameFailure));
 }
 
-bootstrap().catch((error: unknown) => {
-  console.error('Failed to initialize renderer:', error);
-  const container = document.getElementById('app');
-  if (container) {
-    const message = error instanceof Error ? error.message : String(error);
-    container.textContent = `Failed to start Blockora: ${message}`;
+// Uncaught errors / rejections: fatal before the first frame, banner afterwards (see ErrorCoordinator).
+window.addEventListener('error', (event) => {
+  if (isBenignWindowMessage(event.message)) {
+    return;
   }
+  errors.late(event.error ?? event.message);
 });
+window.addEventListener('unhandledrejection', (event) => errors.late(event.reason));
+
+bootstrap().catch((error: unknown) => errors.fatal(error, 'bootstrap'));
