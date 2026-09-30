@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 10: web deployment — waiting on the user's hosting choice.
+Phase 10: production build + Cloudflare Pages config (local only).
 
 ---
 
@@ -197,6 +197,12 @@ None.
 ---
 
 # Decisions
+
+## 2026-09-30
+
+### Hosting: Cloudflare Pages (user-approved)
+
+Phase 10 targets Cloudflare Pages: static `dist/` output, cache rules via a `_headers` file (hashed assets immutable, `index.html` revalidated). Config is prepared locally only; creating the Pages project, connecting the repo and deploying need the user's go-ahead. Phase branches stay unmerged (user merges when ready); Phase 10 work goes on `phase-10/deploy`.
 
 ## 2026-09-30
 
@@ -641,4 +647,4 @@ pnpm test → PASS (81 files, 1321 tests)
 
 # Next Task
 
-After Codex PASS: verify Phase 9 against ROADMAP (all items done), then Phase 10 web deployment — read ROADMAP Phase 10 and plan the first slice (production build config, base path, favicon (known 404), static hosting target decision — ask the user which host before configuring anything external).
+Phase 10 slice 1 (local only): production build hardening (split three.js into its own long-cached chunk, report gzip / brotli sizes), `public/_headers` for Cloudflare Pages cache rules, an original favicon (fixes the known 404), and a deploy checklist; no account or deploy actions without the user's go-ahead.
