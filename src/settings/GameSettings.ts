@@ -10,6 +10,12 @@ export interface GameSettings {
   readonly renderDistance: number;
   /** Small always-on FPS readout. */
   readonly showFpsCounter: boolean;
+  /** Overall volume, percent 0..100. */
+  readonly masterVolume: number;
+  /** Sound effects volume, percent 0..100. */
+  readonly effectsVolume: number;
+  /** Ambient (wind) volume, percent 0..100. */
+  readonly ambientVolume: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -17,6 +23,9 @@ export const DEFAULT_SETTINGS: GameSettings = {
   mouseSensitivity: 1,
   renderDistance: WORLD_CONFIG.renderDistance,
   showFpsCounter: false,
+  masterVolume: SETTINGS_CONFIG.defaultMasterVolume,
+  effectsVolume: SETTINGS_CONFIG.defaultEffectsVolume,
+  ambientVolume: SETTINGS_CONFIG.defaultAmbientVolume,
 };
 
 interface Range {
@@ -35,13 +44,21 @@ function numberOr(value: unknown, fallback: number, range: Range, integer: boole
   return clampTo(integer ? Math.round(value) : value, range);
 }
 
-/** Clamps every field into its SETTINGS_CONFIG range (FOV and render distance are rounded to integers). */
+/** A volume percent rounded to a whole number inside its range; non-finite / missing falls back. */
+function volumeOr(value: unknown, fallback: number): number {
+  return numberOr(value, fallback, SETTINGS_CONFIG.volume, true);
+}
+
+/** Clamps every field into its SETTINGS_CONFIG range (FOV, render distance and volumes are rounded to integers). */
 export function clampSettings(settings: GameSettings): GameSettings {
   return {
     fov: clampTo(Math.round(settings.fov), SETTINGS_CONFIG.fov),
     mouseSensitivity: clampTo(settings.mouseSensitivity, SETTINGS_CONFIG.mouseSensitivity),
     renderDistance: clampTo(Math.round(settings.renderDistance), SETTINGS_CONFIG.renderDistance),
     showFpsCounter: settings.showFpsCounter,
+    masterVolume: volumeOr(settings.masterVolume, DEFAULT_SETTINGS.masterVolume),
+    effectsVolume: volumeOr(settings.effectsVolume, DEFAULT_SETTINGS.effectsVolume),
+    ambientVolume: volumeOr(settings.ambientVolume, DEFAULT_SETTINGS.ambientVolume),
   };
 }
 
@@ -65,6 +82,9 @@ export function validateSettings(raw: unknown): GameSettings {
     ),
     renderDistance: numberOr(data.renderDistance, DEFAULT_SETTINGS.renderDistance, SETTINGS_CONFIG.renderDistance, true),
     showFpsCounter: typeof data.showFpsCounter === 'boolean' ? data.showFpsCounter : DEFAULT_SETTINGS.showFpsCounter,
+    masterVolume: volumeOr(data.masterVolume, DEFAULT_SETTINGS.masterVolume),
+    effectsVolume: volumeOr(data.effectsVolume, DEFAULT_SETTINGS.effectsVolume),
+    ambientVolume: volumeOr(data.ambientVolume, DEFAULT_SETTINGS.ambientVolume),
   };
 }
 

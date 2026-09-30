@@ -43,14 +43,15 @@ describe('settings defaults and ranges', () => {
 
 describe('clampSettings', () => {
   it('clamps every field into its range and rounds FOV / render distance', () => {
-    const low = clampSettings({ fov: 1, mouseSensitivity: 0, renderDistance: 0, showFpsCounter: true });
+    const low = clampSettings({ ...DEFAULT_SETTINGS, fov: 1, mouseSensitivity: 0, renderDistance: 0, showFpsCounter: true });
     expect(low).toEqual({
+      ...DEFAULT_SETTINGS,
       fov: SETTINGS_CONFIG.fov.min,
       mouseSensitivity: SETTINGS_CONFIG.mouseSensitivity.min,
       renderDistance: SETTINGS_CONFIG.renderDistance.min,
       showFpsCounter: true,
     });
-    const high = clampSettings({ fov: 999, mouseSensitivity: 99, renderDistance: 99, showFpsCounter: false });
+    const high = clampSettings({ ...DEFAULT_SETTINGS, fov: 999, mouseSensitivity: 99, renderDistance: 99, showFpsCounter: false });
     expect(high.fov).toBe(SETTINGS_CONFIG.fov.max);
     expect(high.mouseSensitivity).toBe(SETTINGS_CONFIG.mouseSensitivity.max);
     expect(high.renderDistance).toBe(SETTINGS_CONFIG.renderDistance.max);
@@ -97,7 +98,7 @@ describe('applyLookSensitivity', () => {
 describe('settings storage', () => {
   it('round-trips through storage', () => {
     const storage = new MemoryStorage();
-    const settings = { fov: 100, mouseSensitivity: 1.5, renderDistance: 6, showFpsCounter: true };
+    const settings = { ...DEFAULT_SETTINGS, fov: 100, mouseSensitivity: 1.5, renderDistance: 6, showFpsCounter: true };
     expect(saveSettings(settings, storage)).toBe(true);
     expect(storage.data.has(SETTINGS_CONFIG.storageKey)).toBe(true);
     expect(loadSettings(storage)).toEqual(settings);

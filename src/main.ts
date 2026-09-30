@@ -40,6 +40,13 @@ import { PauseController, simulationDt } from './gameplay/pause';
 import { applyLookSensitivity, clampSettings, type GameSettings } from './settings/GameSettings';
 import { loadSettings, saveSettings } from './settings/settingsStorage';
 import { applyFov, applyRenderDistanceToView } from './renderer/viewSettings';
+import { AudioSystem } from './audio/AudioSystem';
+import { volumesFromSettings } from './audio/volume';
+import { GameEventQueue, type GameEventSink } from './events/GameEvents';
+import { MovementEventTracker } from './events/movementEvents';
+import { EatEventTracker } from './events/eatEvents';
+import { MobIdleEventTimer } from './events/mobIdleEvents';
+import { getSkyLight } from './world/light';
 import { PerfStats, type PerfProbe } from './debug/PerfStats';
 import { readJsHeapMb, readRendererStats, type DebugSnapshot } from './debug/debugText';
 import { DayNightLighting } from './renderer/DayNightLighting';
@@ -88,6 +95,7 @@ import {
   SAVE_CONFIG,
   SURVIVAL_CONFIG,
   CHUNK_STREAMING_CONFIG,
+  AUDIO_CONFIG,
 } from './config/constants';
 import { Inventory } from './items/Inventory';
 import { itemRegistry, type ItemRegistry } from './items/ItemRegistry';
@@ -107,6 +115,8 @@ interface BlockEditTargets {
   readonly meshBuffers: MeshBuffers;
   readonly edits: BlockEditStore;
   readonly probe: PerfProbe;
+  /** Receives the sound-relevant events of committed edits. */
+  readonly events: GameEventSink;
 }
 
 /**
@@ -150,6 +160,11 @@ function applyBreak(
     applyToolWear(inventory, blockDefBeforeBreak, tool, itemRegistry);
   }
   commitBlockChange(change, targets);
+  targets.events.emit({
+    type: 'blockBreak',
+    blockId: change.previous,
+    position: { x: change.wx + 0.5, y: change.wy + 0.5, z: change.wz + 0.5 },
+  });
   return true;
 }
 
@@ -169,6 +184,11 @@ function applyPlace(
     return false;
   }
   commitBlockChange(change, targets);
+  targets.events.emit({
+    type: 'blockPlace',
+    blockId: change.next,
+    position: { x: change.wx + 0.5, y: change.wy + 0.5, z: change.wz + 0.5 },
+  });
   return true;
 }
 
@@ -271,6 +291,22 @@ async function bootstrap(): Promise<void> {
   // camera FOV, look sensitivity and render distance; see applySettings below.
   let settings: GameSettings = loadSettings();
 
+  // Audio: the sound engine only starts on the first user gesture (browser
+  // autoplay policy) and everything stays silent if Web Audio is unavailable.
+  const audio = new AudioSystem(volumesFromSettings(settings));
+  const unlockAudio = (): void => {
+    audio.unlock();
+    if (audio.status !== 'locked') {
+      window.removeEventListener('pointerdown', unlockAudio, true);
+      window.removeEventListener('keydown', unlockAudio, true);
+    }
+  };
+  window.addEventListener('pointerdown', unlockAudio, true);
+  window.addEventListener('keydown', unlockAudio, true);
+  document.addEventListener('visibilitychange', () => audio.setHidden(document.hidden));
+  window.addEventListener('pagehide', () => audio.dispose());
+  const gameEvents = new GameEventQueue();
+
   // Read the save (if any) for the title screen. The world is built once, after
   // the player picks Continue or New world: the chosen seed drives generation
   // and a continued save chunk edits must be in place before the first chunk
@@ -284,6 +320,7 @@ async function bootstrap(): Promise<void> {
     (next) => {
       settings = clampSettings(next);
       saveSettings(settings);
+      audio.setVolumes(volumesFromSettings(settings));
     },
     saveStore,
     storedLoad,
@@ -368,6 +405,9 @@ async function bootstrap(): Promise<void> {
   const playerHunger = new PlayerHunger();
   const survivalTicker = new SurvivalTicker();
   const fallTracker = new FallTracker();
+  const movementEvents = new MovementEventTracker(gameEvents);
+  const eatEvents = new EatEventTracker(gameEvents);
+  const mobIdleEvents = new MobIdleEventTimer(gameEvents, Math.random);
   const healthHud = new HealthHud(container);
   const hungerHud = new HungerHud(container);
   const deathScreen = new DeathScreen(container);
@@ -403,6 +443,7 @@ async function bootstrap(): Promise<void> {
     meshBuffers: editMeshBuffers,
     edits: blockEdits,
     probe: perfStats,
+    events: gameEvents,
   };
 
   const saveState: GameSaveState = {
@@ -417,6 +458,7 @@ async function bootstrap(): Promise<void> {
   if (saved !== null) {
     applySave(saved, saveState);
   }
+  let lastHealth = playerHealth.health;
   const worldSaver = createWorldSaver(saveStore, loadResult, saveState, blockEdits);
   const saveScheduler =
     worldSaver === null
@@ -499,6 +541,7 @@ async function bootstrap(): Promise<void> {
     document.exitPointerLock();
     openChestPos = { x, y, z };
     inventoryScreen.open('chest', session);
+    gameEvents.emit({ type: 'chestOpen' });
   }
 
   function closeInventoryScreen(): void {
@@ -531,6 +574,7 @@ async function bootstrap(): Promise<void> {
       inventoryScreen.close(dropLeftoverAtEye);
     }
     deathScreen.show();
+    gameEvents.emit({ type: 'playerDeath' });
   }
 
   /**
@@ -544,6 +588,7 @@ async function bootstrap(): Promise<void> {
     playerHunger.reset();
     survivalTicker.reset();
     fallTracker.reset();
+    movementEvents.reset();
 
     chunkManager.warmUp(worldToChunkCoord(spawn.position.x, spawn.position.z));
 
@@ -579,6 +624,7 @@ async function bootstrap(): Promise<void> {
       mobDistances = mobDistancesFor(next.renderDistance);
     }
     fpsCounter.setVisible(next.showFpsCounter);
+    audio.setVolumes(volumesFromSettings(next));
     saveSettings(next);
   }
 
@@ -692,6 +738,7 @@ async function bootstrap(): Promise<void> {
       const sprinting = sampled.sprint && isMoving;
       const jumped = sampled.jump && playerState.onGround;
 
+      const velocityYBefore = playerState.velocity.y;
       stepPlayer(playerState, sampled, dt, isSolid);
 
       const feetInFluid = isFluid(
@@ -699,6 +746,21 @@ async function bootstrap(): Promise<void> {
         Math.floor(playerState.position.y),
         Math.floor(playerState.position.z),
       );
+      movementEvents.update({
+        x: playerState.position.x,
+        z: playerState.position.z,
+        onGround: playerState.onGround,
+        crouching: playerState.crouching,
+        sprinting,
+        inFluid: feetInFluid,
+        velocityYBefore,
+        jumped,
+        surfaceBlockId: chunkStore.getBlock(
+          Math.floor(playerState.position.x),
+          Math.floor(playerState.position.y - AUDIO_CONFIG.surfaceProbeDepth),
+          Math.floor(playerState.position.z),
+        ),
+      });
       const fallDamage = fallTracker.update(playerState, feetInFluid);
       if (fallDamage > 0) {
         playerHealth.damage(fallDamage, 'fall');
@@ -834,7 +896,15 @@ async function bootstrap(): Promise<void> {
           const target = entityStore.get(entityHit.mobId);
           if (target !== undefined) {
             const tool = selectedItemId !== undefined ? itemRegistry.toolFor(selectedItemId) : undefined;
-            performMobAttack(target, rayOrigin, tool, entityStore, drops, inventory, itemRegistry, mobRng);
+            const mobPosition = { ...target.position };
+            const attack = performMobAttack(target, rayOrigin, tool, entityStore, drops, inventory, itemRegistry, mobRng);
+            if (attack.applied) {
+              gameEvents.emit({
+                type: attack.killed ? 'mobDeath' : 'mobHurt',
+                mobType: target.type,
+                position: mobPosition,
+              });
+            }
             attackCooldownRemaining = COMBAT_CONFIG.attackCooldown;
           }
         }
@@ -867,6 +937,7 @@ async function bootstrap(): Promise<void> {
             ? eatProgress.update(selectedItemId ?? null, playerHunger.canEat(), input.isUseHeld(), dt)
             : eatProgress.update(null, false, false, dt);
 
+        eatEvents.update(eatState, dt);
         if (eatState === 'eating') {
           crosshair.setProgress(eatProgress.progress);
         } else {
@@ -923,12 +994,15 @@ async function bootstrap(): Promise<void> {
       input.consumeActions();
       breakProgress.update(null, false, dt, 0);
       eatProgress.update(null, false, false, dt);
+      eatEvents.update('idle', dt);
       crosshair.setProgress(0);
     }
 
     if (!paused) {
       drops.update(dt, isSolid, isColumnLoaded);
-      drops.collect(playerAabb(playerState), inventory);
+      if (drops.collect(playerAabb(playerState), inventory) > 0) {
+        gameEvents.emit({ type: 'pickup' });
+      }
     }
     itemDropRenderer.update(drops.drops());
 
@@ -952,6 +1026,23 @@ async function bootstrap(): Promise<void> {
       });
     }
     mobRenderer.update(entityStore.all(), dt);
+    if (!paused) {
+      mobIdleEvents.update(dt, entityStore.all(), playerState.position);
+    }
+
+    // Sound: a health drop (any source) is a hurt cry; death has its own event.
+    if (playerHealth.health < lastHealth && !playerHealth.isDead) {
+      gameEvents.emit({ type: 'playerHurt' });
+    }
+    lastHealth = playerHealth.health;
+    audio.setPaused(paused);
+    audio.setListener(rayOrigin.x, rayOrigin.y, rayOrigin.z, playerState.yaw);
+    gameEvents.drain((event) => audio.play(event));
+    audio.updateAmbient(
+      frameDt,
+      daylightFactor(gameTime.timeOfDay, DAY_NIGHT_CONFIG),
+      getSkyLight(chunkStore, Math.floor(rayOrigin.x), Math.floor(rayOrigin.y), Math.floor(rayOrigin.z)),
+    );
 
     blockOutline.update(hit);
     hotbarHud.update(inventory);

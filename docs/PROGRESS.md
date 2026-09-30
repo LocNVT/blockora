@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 9: audio.
+Phase 9: error handling.
 
 ---
 
@@ -134,7 +134,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 * [x] Main menu
 * [x] Settings
-* [ ] Audio
+* [x] Audio
 * [x] Loading screen
 * [ ] Better textures
 * [ ] Better UI
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Audio: timbres are untuned (never listened to); one shared mob-idle timer; only Pig / Shambler have sounds; voice stealing hard-cuts the oldest voice.
 * Pause / menu: headless Chrome can't grant pointer lock (tests fake the lock state); the "unavailable storage" title state is unit-tested only; no 3D title background; switching worlds reloads the page (world built once per page load); the pool may retain free geometries after shrinking render distance;
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving until New world → Replace on the title screen; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
 * Geometry pool: ~20 MB more CPU heap (and matching GPU memory) from capacity slack, capacities drift upward (small sections can take large free geometries); each growth replacement or free-list overflow still leaks one VAO on WebGL2 (bounded, tapers off); F3 "Geometries" includes free pooled geometries. One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
@@ -265,6 +266,14 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 procedural audio
+
+* `src/audio/`: `AudioSystem` is the only Web Audio owner (context created on the first pointer / key gesture, master → effects / ambient buses, suspended while paused or hidden, no-op when unavailable, disposed on `pagehide`); tiny synth (oscillators + one shared noise buffer, ADSR, per-play pitch / filter / level variation from an injected RNG); no audio files. `AUDIO_CONFIG`.
+* Events: `src/events/` (`GameEventQueue`, footstep / jump / land, eat and mob-idle trackers) — gameplay never imports audio (boundary test); main.ts drains the queue into the audio system each frame. 14 events: block break / place per material (stone, wood, dirt, grass, sand, gravel, glass, leaves), footsteps (stride-based, sprint / crouch levels, silent airborne), jump, land (by fall speed), player hurt (any health drop) / death, eat bite / done, pickup, chest open, Pig and Shambler idle / hurt / death.
+* 16-voice cap with oldest-voice stealing, nodes disconnected on end; distance attenuation (full within 2 blocks, silent at 24) + stereo pan from listener yaw. Ambient wind bed follows daylight and sky light (near-silent in caves).
+* Settings: master / effects / ambient volume (0–100, defaults 80 / 100 / 60), same storage key (old records load defaults), sliders apply live.
+* Verified in real Chrome (node-graph state only — nothing was listened to): context created on the first gesture, running after Play, suspended on pause / hidden tab, footsteps while walking, 90 rapid breaks peak at 16 voices and return to 0, volume sliders set gains, no page errors. Codex review PASS_WITH_NOTES (first round; note: Web Audio graph creation / voice cleanup / suspend-resume are browser-verified only, not unit-tested).
 
 ## 2026-09-30 — Phase 9 main menu + loading screen
 
@@ -601,11 +610,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (76 files, 1221 tests)
+pnpm test → PASS (78 files, 1261 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9: audio (Web Audio API, no files — small procedural synthesised sound effects: block break / place, footsteps, hurt, eat, mob sounds; master / effects volume in Settings; ambient day / night / cave tone optional), then error handling (renderer init failure → readable message instead of a blank page).
+Phase 9: error handling — renderer / WebGPU+WebGL2 init failure, worker failure, IndexedDB errors and uncaught exceptions show a readable in-page message (with a copyable error detail) instead of a blank page or silent console errors; then graphics settings (e.g. fog on / off, shadows N/A) and better textures.

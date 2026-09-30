@@ -257,14 +257,14 @@ on a reasonable desktop.
 * [x] FOV
 * [x] Mouse sensitivity
 * [x] Render distance
-* [ ] Audio settings
+* [x] Audio settings
 * [ ] Graphics settings
 * [x] Debug screen
 * [x] Loading screen
 * [ ] Error handling
 * [ ] Better textures
-* [ ] Sound effects
-* [ ] Ambient audio
+* [x] Sound effects
+* [x] Ambient audio
 
 ---
 
