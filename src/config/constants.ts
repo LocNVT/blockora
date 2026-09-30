@@ -47,6 +47,25 @@ export const PLAYER_CONFIG = {
   spawnPitch: -0.5,
 } as const;
 
+/**
+ * Player-adjustable settings (see src/settings): allowed ranges and the
+ * localStorage key. Defaults come from PLAYER_CONFIG / WORLD_CONFIG.
+ */
+export const SETTINGS_CONFIG = {
+  /** Versioned localStorage key; bump the suffix when the stored shape changes. */
+  storageKey: 'blockora.settings.v1',
+  fov: { min: 60, max: 110, step: 1 },
+  /** Multiplier applied to PLAYER_CONFIG.mouseSensitivity (1 = the base value). */
+  mouseSensitivity: { min: 0.25, max: 3, step: 0.05 },
+  /** Rendered radius in chunks. */
+  renderDistance: { min: 2, max: 12, step: 1 },
+} as const;
+
+export const PAUSE_CONFIG = {
+  /** Seconds after the game requests pointer lock during which being unlocked does not pause (lock is acquired asynchronously). */
+  lockGraceSeconds: 0.75,
+} as const;
+
 export const RENDER_CONFIG = {
   skyColor: 0x87ceeb,
   fogNearChunks: 0.5,
@@ -513,8 +532,8 @@ export const CHUNK_STREAMING_CONFIG = {
 
 /** Renderable sections per chunk mesh (opaque + transparent), each its own geometry. */
 const CHUNK_MESH_SECTIONS = 2;
-/** Chunk columns inside the meshed (rendered) radius. */
-const RENDERED_CHUNKS = (2 * WORLD_CONFIG.renderDistance + 1) ** 2;
+/** Chunk columns inside the largest selectable rendered radius (SETTINGS_CONFIG). */
+const RENDERED_CHUNKS = (2 * SETTINGS_CONFIG.renderDistance.max + 1) ** 2;
 
 /**
  * Pooled chunk section geometries (see ChunkGeometryPool). three r186's WebGL2
@@ -530,8 +549,10 @@ export const CHUNK_GEOMETRY_POOL_CONFIG = {
   capacityQuantum: 64,
   /**
    * Released geometries kept for reuse; beyond this they are disposed. One
-   * full rendered area, so even a teleport (every chunk released, then
-   * re-meshed) is absorbed without disposing.
+   * full rendered area at the maximum selectable render distance, so even a
+   * teleport (every chunk released, then re-meshed) or a large render-distance
+   * shrink is absorbed without disposing. Only geometries actually released
+   * are held; nothing is preallocated.
    */
   maxFreeGeometries: RENDERED_CHUNKS * CHUNK_MESH_SECTIONS,
 } as const;

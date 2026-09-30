@@ -94,6 +94,39 @@ export function isValidSpawnColumn(
   return skyLight >= MOB_CONFIG.minSpawnSkyLight;
 }
 
+/** Spawn / despawn distances (blocks) for one render distance; see `mobDistancesFor`. */
+export interface MobDistances {
+  readonly minSpawn: number;
+  readonly maxSpawn: number;
+  readonly despawn: number;
+}
+
+/**
+ * Mob distances derived from the live render distance so mobs never spawn or
+ * linger beyond the rendered radius: despawn = radius blocks, max spawn = one
+ * chunk inside it, min spawn = MOB_CONFIG.minSpawnDistance (halved max spawn
+ * when the radius is too small to fit it). Equals the MOB_CONFIG values at
+ * WORLD_CONFIG.renderDistance.
+ */
+export function mobDistancesFor(
+  renderDistanceChunks: number,
+  chunkWidth: number = WORLD_CONFIG.chunkWidth,
+): MobDistances {
+  const despawn = renderDistanceChunks * chunkWidth;
+  const maxSpawn = Math.max(0, despawn - chunkWidth);
+  return {
+    minSpawn: Math.min(MOB_CONFIG.minSpawnDistance, Math.floor(maxSpawn / 2)),
+    maxSpawn,
+    despawn,
+  };
+}
+
+const DEFAULT_MOB_DISTANCES: MobDistances = {
+  minSpawn: MOB_CONFIG.minSpawnDistance,
+  maxSpawn: MOB_CONFIG.maxSpawnDistance,
+  despawn: MOB_CONFIG.despawnDistance,
+};
+
 /** Squared horizontal distance from (px, pz) to (x, z) — avoids a sqrt for radius comparisons. */
 function horizontalDistanceSq(px: number, pz: number, x: number, z: number): number {
   const dx = x - px;
@@ -115,13 +148,15 @@ export function attemptPassiveSpawns(
   entityStore: EntityStore,
   playerPosition: { x: number; z: number },
   rng: Rng,
+  distances: MobDistances = DEFAULT_MOB_DISTANCES,
 ): void {
   const passiveCount = (): number => entityStore.count() - countHostile(entityStore);
   if (passiveCount() >= MOB_CONFIG.maxPassiveMobs) {
     return;
   }
 
-  const { minSpawnDistance, maxSpawnDistance, spawnAttemptsPerWave } = MOB_CONFIG;
+  const { spawnAttemptsPerWave } = MOB_CONFIG;
+  const { minSpawn, maxSpawn } = distances;
 
   for (let attempt = 0; attempt < spawnAttemptsPerWave; attempt += 1) {
     if (passiveCount() >= MOB_CONFIG.maxPassiveMobs) {
@@ -129,7 +164,7 @@ export function attemptPassiveSpawns(
     }
 
     const angle = rng() * Math.PI * 2;
-    const distance = minSpawnDistance + rng() * (maxSpawnDistance - minSpawnDistance);
+    const distance = minSpawn + rng() * (maxSpawn - minSpawn);
     const wx = Math.floor(playerPosition.x + Math.cos(angle) * distance);
     const wz = Math.floor(playerPosition.z + Math.sin(angle) * distance);
 
@@ -227,8 +262,10 @@ export function attemptHostileSpawns(
   playerPosition: { x: number; y: number; z: number },
   rng: Rng,
   daylight: number,
+  distances: MobDistances = DEFAULT_MOB_DISTANCES,
 ): void {
-  const { minSpawnDistance, maxSpawnDistance, hostileSpawnAttemptsPerWave, hostileCaveSearchRange } = MOB_CONFIG;
+  const { hostileSpawnAttemptsPerWave, hostileCaveSearchRange } = MOB_CONFIG;
+  const { minSpawn, maxSpawn } = distances;
   const def = HOSTILE_DEFINITIONS[0];
   if (def === undefined) {
     return;
@@ -240,7 +277,7 @@ export function attemptHostileSpawns(
     }
 
     const angle = rng() * Math.PI * 2;
-    const distance = minSpawnDistance + rng() * (maxSpawnDistance - minSpawnDistance);
+    const distance = minSpawn + rng() * (maxSpawn - minSpawn);
     const caveY = playerPosition.y + (rng() * 2 - 1) * hostileCaveSearchRange;
     const initialYaw = rng() * Math.PI * 2 - Math.PI;
     const wx = Math.floor(playerPosition.x + Math.cos(angle) * distance);
@@ -262,8 +299,9 @@ export function attemptSpawns(
   playerPosition: { x: number; y?: number; z: number },
   rng: Rng,
   daylight = 1,
+  distances: MobDistances = DEFAULT_MOB_DISTANCES,
 ): void {
-  attemptPassiveSpawns(store, registry, entityStore, playerPosition, rng);
+  attemptPassiveSpawns(store, registry, entityStore, playerPosition, rng, distances);
   attemptHostileSpawns(
     store,
     registry,
@@ -271,6 +309,7 @@ export function attemptSpawns(
     { x: playerPosition.x, y: playerPosition.y ?? 0, z: playerPosition.z },
     rng,
     daylight,
+    distances,
   );
 }
 
@@ -310,7 +349,7 @@ export function despawnHostilesInDaylight(
 }
 
 /**
- * Removes every mob farther than MOB_CONFIG.despawnDistance from the player
+ * Removes every mob farther than `distances.despawn` from the player
  * (horizontal distance) or whose column is no longer loaded. Deterministic,
  * no allocation beyond the ids collected for removal.
  */
@@ -318,8 +357,9 @@ export function despawnFarMobs(
   store: ChunkStore,
   entityStore: EntityStore,
   playerPosition: { x: number; z: number },
+  distances: MobDistances = DEFAULT_MOB_DISTANCES,
 ): void {
-  const despawnDistanceSq = MOB_CONFIG.despawnDistance * MOB_CONFIG.despawnDistance;
+  const despawnDistanceSq = distances.despawn * distances.despawn;
   const toRemove: number[] = [];
 
   for (const mob of entityStore.all()) {

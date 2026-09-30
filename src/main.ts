@@ -8,7 +8,7 @@ import { ItemDropRenderer } from './renderer/ItemDropRenderer';
 import { MobRenderer } from './renderer/MobRenderer';
 import { EntityStore } from './entities/EntityStore';
 import { createMobSpawnTimer, updateMobs } from './entities/updateMobs';
-import { mulberry32 } from './entities/mobSpawning';
+import { mobDistancesFor, mulberry32 } from './entities/mobSpawning';
 import { createPlayerState } from './player/PlayerState';
 import { stepPlayer } from './player/playerPhysics';
 import { InputController } from './player/InputController';
@@ -18,12 +18,18 @@ import { PlayerHealth } from './player/PlayerHealth';
 import { PlayerHunger, SurvivalTicker } from './player/PlayerHunger';
 import { FallTracker } from './player/fallDamage';
 import { computeSpawnPosition, resolveSpawnHeight } from './player/spawn';
-import { PointerLockHint } from './ui/PointerLockHint';
 import { Crosshair } from './ui/Crosshair';
 import { HealthHud } from './ui/HealthHud';
 import { HungerHud } from './ui/HungerHud';
 import { DeathScreen } from './ui/DeathScreen';
 import { DebugOverlay } from './ui/DebugOverlay';
+import { FpsCounter } from './ui/FpsCounter';
+import { PauseMenu } from './ui/PauseMenu';
+import { SettingsScreen } from './ui/SettingsScreen';
+import { PauseController, simulationDt } from './gameplay/pause';
+import { applyLookSensitivity, clampSettings, type GameSettings } from './settings/GameSettings';
+import { loadSettings, saveSettings } from './settings/settingsStorage';
+import { applyFov, applyRenderDistanceToView } from './renderer/viewSettings';
 import { PerfStats, type PerfProbe } from './debug/PerfStats';
 import { readJsHeapMb, readRendererStats, type DebugSnapshot } from './debug/debugText';
 import { DayNightLighting } from './renderer/DayNightLighting';
@@ -71,7 +77,6 @@ import {
   PLAYER_CONFIG,
   SAVE_CONFIG,
   SURVIVAL_CONFIG,
-  WORLD_CONFIG,
   CHUNK_STREAMING_CONFIG,
   WORLD_GEN_CONFIG,
 } from './config/constants';
@@ -174,6 +179,13 @@ async function bootstrap(): Promise<void> {
   const scene = sceneWithLights.scene;
   const camera = createCamera(window.innerWidth / window.innerHeight);
 
+  // Player preferences (localStorage, defaults when unavailable) drive the
+  // camera FOV, look sensitivity and render distance; see applySettings below.
+  let settings: GameSettings = loadSettings();
+  applyFov(camera, settings.fov);
+  applyRenderDistanceToView(scene, camera, settings.renderDistance);
+  let mobDistances = mobDistancesFor(settings.renderDistance);
+
   // Load the save (if any) before building world/player state: its seed
   // drives generation and its chunk edits must be in place before the first
   // chunk is generated. A save that can't be read starts a new world with
@@ -207,7 +219,7 @@ async function bootstrap(): Promise<void> {
     worldGenerator,
     blockRegistry,
     chunkMeshRenderer,
-    WORLD_CONFIG.renderDistance,
+    settings.renderDistance,
     undefined,
     lightEngine,
     blockEdits,
@@ -243,7 +255,6 @@ async function bootstrap(): Promise<void> {
   const spawnFeetY = saved === null ? resolveSpawnHeight(chunkStore, blockRegistry, spawn.position) : startPosition.y;
   const playerState = createPlayerState({ ...startPosition, y: spawnFeetY }, spawn.pitch);
   const input = new InputController(renderer.domElement as HTMLCanvasElement);
-  const hint = new PointerLockHint(container);
   const crosshair = new Crosshair(container);
   const blockOutline = new BlockOutline(scene);
   const breakProgress = new BreakProgress();
@@ -256,6 +267,8 @@ async function bootstrap(): Promise<void> {
   const hungerHud = new HungerHud(container);
   const deathScreen = new DeathScreen(container);
   const debugOverlay = new DebugOverlay(container);
+  const fpsCounter = new FpsCounter(container);
+  fpsCounter.setVisible(settings.showFpsCounter);
 
   const inventory = new Inventory();
   if (saved === null) {
@@ -358,6 +371,16 @@ async function bootstrap(): Promise<void> {
     drops.spawn(stack, eye);
   }
 
+  const pauseController = new PauseController();
+  /** Asks for pointer lock (from a user gesture) without flashing the pause menu while it is acquired. */
+  function requestGameLock(): void {
+    pauseController.expectLock();
+    const request: unknown = renderer.domElement.requestPointerLock();
+    if (request instanceof Promise) {
+      request.catch(() => undefined); // refused (e.g. the user just pressed Esc): the pause menu stays up
+    }
+  }
+
   function openInventoryScreen(mode: '2x2' | '3x3'): void {
     const grid = mode === '2x2' ? craftingGrid2x2 : craftingGrid3x3;
     const session = new ContainerSession(inventory, grid);
@@ -377,9 +400,9 @@ async function bootstrap(): Promise<void> {
     openChestPos = null;
     inventoryScreen.close(dropLeftoverAtEye);
     // Keydown is a user gesture, so re-requesting the lock here is allowed;
-    // if it's refused (e.g. focus was lost) the "Click to play" hint simply
-    // reappears next frame via the isLocked() check below — no error surfaces.
-    renderer.domElement.requestPointerLock();
+    // if it is refused (e.g. focus was lost) the pause menu simply appears
+    // once the grace window ends; no error surfaces.
+    requestGameLock();
   }
 
   /**
@@ -432,9 +455,67 @@ async function bootstrap(): Promise<void> {
 
     deathHandled = false;
     deathScreen.hide();
-    renderer.domElement.requestPointerLock();
+    requestGameLock();
   }
   deathScreen.onRespawn(respawn);
+
+  // Settings are applied live and persisted on every change. Render distance
+  // re-derives fog, camera far plane and mob spawn/despawn distances, and
+  // resizes the chunk streaming area (new chunks stream in over time).
+  function applySettings(next: GameSettings): void {
+    const previous = settings;
+    settings = next;
+    if (next.fov !== previous.fov) {
+      applyFov(camera, next.fov);
+    }
+    if (next.renderDistance !== previous.renderDistance) {
+      chunkManager.setRadius(next.renderDistance);
+      applyRenderDistanceToView(scene, camera, next.renderDistance);
+      mobDistances = mobDistancesFor(next.renderDistance);
+    }
+    fpsCounter.setVisible(next.showFpsCounter);
+    saveSettings(next);
+  }
+
+  let settingsOpen = false;
+  const settingsScreen = new SettingsScreen(
+    container,
+    settings,
+    (next) => applySettings(clampSettings(next)),
+    () => {
+      settingsOpen = false;
+    },
+  );
+  const saveDisabledReason: string | null =
+    saveScheduler !== null
+      ? null
+      : loadResult.status === 'blocked'
+        ? 'Saving is disabled: the existing save could not be read.'
+        : 'Saving is unavailable: browser storage is blocked.';
+  const pauseMenu = new PauseMenu(container, {
+    onResume: requestGameLock,
+    onSettings: () => {
+      settingsOpen = true;
+    },
+    onSave: () => {
+      if (saveScheduler === null) {
+        return;
+      }
+      pauseMenu.setSaveBusy(true);
+      pauseMenu.setStatus('Saving...', 'info');
+      void saveScheduler.flushAndWait().then((succeeded) => {
+        pauseMenu.setSaveBusy(false);
+        if (succeeded) {
+          pauseMenu.setStatus('Saved', 'ok');
+        } else {
+          pauseMenu.setStatus('Saving failed; it will retry automatically.', 'error');
+        }
+      });
+    },
+  });
+  pauseMenu.setSaveAvailability(saveDisabledReason);
+  let wasPaused = false;
+  let menuShowsStart: boolean | null = null;
 
   // Compile every visible material (chunks, sky, lights) and the block
   // outline before the first frame, so the shader/pipeline stalls happen
@@ -449,7 +530,17 @@ async function bootstrap(): Promise<void> {
   renderer.setAnimationLoop((timestamp) => {
     perfStats.markFrame();
     timer.update(timestamp);
-    const dt = timer.getDelta();
+    const frameDt = timer.getDelta();
+
+    // Paused (unlocked with no other screen owning the cursor) freezes the
+    // simulation: every dt below is 0 and the player/mob/drop steps are skipped.
+    // Rendering, chunk streaming and the UI keep running.
+    const paused = pauseController.update(frameDt, {
+      locked: input.isLocked(),
+      screenOpen: inventoryScreen.isOpen,
+      dead: playerHealth.isDead,
+    });
+    const dt = simulationDt(paused, frameDt);
 
     // Time keeps advancing even while dead (death only freezes movement/actions).
     gameTime.advance(dt);
@@ -463,7 +554,8 @@ async function bootstrap(): Promise<void> {
     // the camera doesn't snap on respawn), but feed a zeroed input into
     // stepPlayer while dead so movement/actions are frozen.
     const sampled: MovementInput = input.sample();
-    if (!playerHealth.isDead) {
+    applyLookSensitivity(sampled, settings);
+    if (!playerHealth.isDead && !paused) {
       // Sprint gate: low hunger forces sprint off before physics/activity
       // tracking see it (playerPhysics itself is untouched).
       if (!playerHunger.canSprint()) {
@@ -512,6 +604,15 @@ async function bootstrap(): Promise<void> {
     if (playerHealth.isDead) {
       // Death already closed the inventory screen in handleDeath(); ignore
       // further toggle/close latches while dead so they don't reopen it.
+    } else if (paused) {
+      // The pause menu owns input: Esc goes back from settings, or resumes.
+      if (uiInput.close) {
+        if (settingsOpen) {
+          settingsOpen = false;
+        } else {
+          requestGameLock();
+        }
+      }
     } else if (uiInput.toggleInventory) {
       if (inventoryScreen.isOpen) {
         closeInventoryScreen();
@@ -530,8 +631,37 @@ async function bootstrap(): Promise<void> {
       closeInventoryScreen();
     }
 
-    // Hint hidden while any overlay (inventory, death screen) owns the screen.
-    hint.setLocked(input.isLocked() || inventoryScreen.isOpen || playerHealth.isDead);
+    // One overlay at a time: the pause menu / settings screen exist only while
+    // paused, which excludes the inventory and death screens by construction.
+    if (paused && !wasPaused) {
+      settingsOpen = false;
+      pauseMenu.setStatus(saveDisabledReason ?? '', saveDisabledReason === null ? 'info' : 'error');
+    }
+    wasPaused = paused;
+    if (!paused) {
+      settingsOpen = false;
+    }
+    const startScreen = pauseController.isStartScreen;
+    if (startScreen !== menuShowsStart) {
+      menuShowsStart = startScreen;
+      pauseMenu.setMode(startScreen ? 'start' : 'paused');
+    }
+    const showMenu = paused && !settingsOpen;
+    const showSettings = paused && settingsOpen;
+    if (showMenu !== pauseMenu.visible) {
+      if (showMenu) {
+        pauseMenu.show();
+      } else {
+        pauseMenu.hide();
+      }
+    }
+    if (showSettings !== settingsScreen.visible) {
+      if (showSettings) {
+        settingsScreen.show();
+      } else {
+        settingsScreen.hide();
+      }
+    }
 
     eyePosition(playerState, PLAYER_CONFIG, rayOrigin);
     lookDirection(playerState.yaw, playerState.pitch, rayDirection);
@@ -549,7 +679,7 @@ async function bootstrap(): Promise<void> {
       attackCooldownRemaining = Math.max(0, attackCooldownRemaining - dt);
     }
 
-    if (!inventoryScreen.isOpen && !playerHealth.isDead) {
+    if (!inventoryScreen.isOpen && !playerHealth.isDead && !paused) {
       applyHotbarInput(inventory, input.consumeHotbarInput());
 
       const actions = input.consumeActions();
@@ -668,33 +798,38 @@ async function bootstrap(): Promise<void> {
       crosshair.setProgress(0);
     }
 
-    drops.update(dt, isSolid, isColumnLoaded);
-    const playerBox = playerAabb(playerState);
-    drops.collect(playerBox, inventory);
+    if (!paused) {
+      drops.update(dt, isSolid, isColumnLoaded);
+      drops.collect(playerAabb(playerState), inventory);
+    }
     itemDropRenderer.update(drops.drops());
 
     // Mobs keep simulating/rendering even while the player is dead (only
     // player movement/actions are frozen above).
-    updateMobs(entityStore, dt, mobSpawnTimer, {
-      store: chunkStore,
-      registry: blockRegistry,
-      isSolid,
-      isFluid,
-      rng: mobRng,
-      playerPosition: playerState.position,
-      playerAlive: !playerHealth.isDead,
-      daylight: daylightFactor(gameTime.timeOfDay, DAY_NIGHT_CONFIG),
-      // PlayerHealth ignores damage while dead or invulnerable.
-      onAttackPlayer: (damage: number): void => {
-        playerHealth.damage(damage, 'generic');
-      },
-    });
+    if (!paused) {
+      updateMobs(entityStore, dt, mobSpawnTimer, {
+        store: chunkStore,
+        registry: blockRegistry,
+        isSolid,
+        isFluid,
+        rng: mobRng,
+        playerPosition: playerState.position,
+        playerAlive: !playerHealth.isDead,
+        daylight: daylightFactor(gameTime.timeOfDay, DAY_NIGHT_CONFIG),
+        // PlayerHealth ignores damage while dead or invulnerable.
+        onAttackPlayer: (damage: number): void => {
+          playerHealth.damage(damage, 'generic');
+        },
+        distances: mobDistances,
+      });
+    }
     mobRenderer.update(entityStore.all(), dt);
 
     blockOutline.update(hit);
     hotbarHud.update(inventory);
 
     saveScheduler?.update(dt);
+    fpsCounter.update(perfStats.now(), () => perfStats.snapshot().fps);
 
     renderer.render(scene, camera);
 
@@ -710,7 +845,7 @@ async function bootstrap(): Promise<void> {
       mobCount: entityStore.count(),
       position: playerState.position,
       chunk: worldToChunkCoord(playerState.position.x, playerState.position.z),
-      renderDistance: WORLD_CONFIG.renderDistance,
+      renderDistance: settings.renderDistance,
     }));
   });
 }

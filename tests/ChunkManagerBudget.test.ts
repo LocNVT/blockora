@@ -293,3 +293,80 @@ describe('rendered radius vs mob spawning', () => {
     expect(MOB_CONFIG.maxSpawnDistance).toBeLessThan(MOB_CONFIG.despawnDistance);
   });
 });
+
+describe('ChunkManager.setRadius', () => {
+  const origin: ChunkCoord = { cx: 0, cz: 0 };
+  const uniqueCount = (keys: readonly string[]): number => new Set(keys).size;
+
+  it('growing requests the new chunks and meshes them once; already meshed chunks are not remeshed', () => {
+    const s = setup({ radius: 2, outerRing: 1 });
+    settle(s, origin);
+    expect(s.store.size).toBe(area(3));
+    expect(s.sink.meshed.size).toBe(area(2));
+    const requestedBefore = s.service.requested.length;
+
+    s.manager.setRadius(4);
+    expect(s.manager.renderRadius).toBe(4);
+    expect(s.manager.streaming.pending + s.manager.streaming.inFlight).toBeGreaterThan(0);
+    settle(s, origin);
+
+    expect(s.service.requested.length - requestedBefore).toBe(area(5) - area(3));
+    expect(s.store.size).toBe(area(5));
+    expect(s.sink.meshed.size).toBe(area(4));
+    // The meshed-once rule: every chunk was meshed exactly once across both radii.
+    expect(s.sink.upserts.length).toBe(area(4));
+    expect(uniqueCount(s.sink.upserts)).toBe(area(4));
+  });
+
+  it('shrinking unloads chunks beyond the new outer ring, removes their meshes and keeps the ring loaded', () => {
+    const s = setup({ radius: 4, outerRing: 1 });
+    settle(s, origin);
+    expect(s.store.size).toBe(area(5));
+    const upsertsBefore = s.sink.upserts.length;
+
+    s.manager.setRadius(2);
+    expect(s.store.size).toBe(area(3)); // radius + outerRing stays loaded
+    expect(s.sink.meshed.size).toBe(area(2));
+    for (const key of s.sink.meshed) {
+      const [cx, cz] = key.split(',').map(Number) as [number, number];
+      expect(cheb({ cx, cz }, origin)).toBeLessThanOrEqual(2);
+    }
+    for (const chunk of s.store.chunks()) {
+      expect(cheb({ cx: chunk.cx, cz: chunk.cz }, origin)).toBeLessThanOrEqual(3);
+    }
+    settle(s, origin);
+    expect(s.sink.upserts.length).toBe(upsertsBefore); // nothing remeshed by shrinking
+    expect(s.store.size).toBe(area(3));
+  });
+
+  it('shrinking cancels in-flight requests outside the new area', () => {
+    const s = setup({ radius: 4, outerRing: 0, maxLoads: 0 });
+    s.manager.update(origin);
+    expect(s.manager.streaming.inFlight).toBe(area(4));
+    s.manager.setRadius(1);
+    expect(s.manager.streaming.inFlight).toBe(area(1));
+    expect(s.manager.streaming.pending).toBe(0);
+  });
+
+  it('is a no-op for the same radius and safe before the first update', () => {
+    const s = setup({ radius: 2, outerRing: 1 });
+    s.manager.setRadius(2);
+    s.manager.setRadius(3);
+    expect(s.manager.streaming.pending).toBe(0);
+    settle(s, origin);
+    expect(s.store.size).toBe(area(4));
+    expect(s.sink.meshed.size).toBe(area(3));
+  });
+
+  it('shrink then grow again re-meshes only the chunks that left the rendered radius', () => {
+    const s = setup({ radius: 3, outerRing: 1 });
+    settle(s, origin);
+    s.manager.setRadius(2);
+    s.manager.update(origin);
+    const before = s.sink.upserts.length;
+    s.manager.setRadius(3);
+    settle(s, origin);
+    expect(s.sink.upserts.length - before).toBe(area(3) - area(2));
+    expect(s.sink.meshed.size).toBe(area(3));
+  });
+});

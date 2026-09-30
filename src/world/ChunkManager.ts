@@ -155,9 +155,10 @@ export class ChunkManager {
   private readonly generator: WorldGenerator;
   private readonly registry: BlockRegistry;
   private readonly sink: ChunkMeshSink;
-  private readonly radius: number;
+  private radius: number;
+  private readonly outerRing: number;
   /** radius + outerRing: chunks generated, lit and kept loaded. */
-  private readonly loadRadius: number;
+  private loadRadius: number;
   private readonly frameBudgetMs: number;
   private readonly maxLoadsPerUpdate: number;
   private readonly maxInFlight: number;
@@ -202,7 +203,8 @@ export class ChunkManager {
     this.registry = registry;
     this.sink = sink;
     this.radius = radius;
-    this.loadRadius = radius + Math.max(0, Math.floor(streaming.outerRing ?? 0));
+    this.outerRing = Math.max(0, Math.floor(streaming.outerRing ?? 0));
+    this.loadRadius = radius + this.outerRing;
     this.frameBudgetMs = streaming.frameBudgetMs ?? Number.POSITIVE_INFINITY;
     this.maxLoadsPerUpdate = maxLoadsPerUpdate;
     this.maxInFlight = Math.max(1, streaming.maxInFlight ?? Math.max(CHUNK_STREAMING_CONFIG.maxInFlight, maxLoadsPerUpdate));
@@ -272,6 +274,32 @@ export class ChunkManager {
     this.flushMeshes(Number.POSITIVE_INFINITY);
   }
 
+  /**
+   * Changes the rendered radius at runtime. The desired / rendered sets are
+   * recomputed around the current center: growing queues the new chunks
+   * (nearest-first, streamed through the normal budgets) and meshes already
+   * loaded ones once their neighbourhood is complete; shrinking unloads chunks
+   * beyond the new `radius + outerRing`, cancels their requests and removes
+   * the meshes of chunks that left the rendered radius. No effect before the
+   * first `update` / `warmUp` beyond storing the value.
+   */
+  setRadius(radius: number): void {
+    const next = Math.max(0, Math.floor(radius));
+    if (next === this.radius) {
+      return;
+    }
+    this.radius = next;
+    this.loadRadius = next + this.outerRing;
+    if (this.lastCenter !== null) {
+      this.recomputeArea(this.lastCenter);
+    }
+  }
+
+  /** Current rendered (meshed) radius in chunks. */
+  get renderRadius(): number {
+    return this.radius;
+  }
+
   /** Cancels outstanding requests and disposes the generation service. */
   dispose(): void {
     for (const request of this.inFlight.values()) {
@@ -286,6 +314,11 @@ export class ChunkManager {
     if (this.lastCenter !== null && this.lastCenter.cx === center.cx && this.lastCenter.cz === center.cz) {
       return;
     }
+    this.recomputeArea(center);
+  }
+
+  /** Rebuilds the desired / rendered chunk sets for `center` and the current radii, then unloads / requeues accordingly. */
+  private recomputeArea(center: ChunkCoord): void {
     this.lastCenter = center;
 
     const previousRender = this.renderKeys;

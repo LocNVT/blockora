@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 9: pause menu + settings (not started).
+Phase 9: main menu + loading screen.
 
 ---
 
@@ -133,7 +133,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 # Phase 9
 
 * [ ] Main menu
-* [ ] Settings
+* [x] Settings
 * [ ] Audio
 * [ ] Loading screen
 * [ ] Better textures
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Pause: headless Esc doesn't release pointer lock in automation (the pause reacts to lock loss, verified via `exitPointerLock`); no quit-to-title yet (main menu is next); the pool may retain up to ~1250 free geometries after shrinking from render distance 12.
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
 * Geometry pool: ~20 MB more CPU heap (and matching GPU memory) from capacity slack, capacities drift upward (small sections can take large free geometries); each growth replacement or free-list overflow still leaks one VAO on WebGL2 (bounded, tapers off); F3 "Geometries" includes free pooled geometries. One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
 * Startup: ~180–210 ms first-frame long task remains (first-use GL driver work; software GPU) plus ~130 ms module-eval task (atlas data-URL generation could be lazy / off-thread); mob / item-drop materials not confirmed precompiled (none on screen at startup).
@@ -264,6 +265,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 pause menu + settings
+
+* `src/settings/`: `GameSettings` (FOV 60–110, mouse sensitivity ×0.25–3 of the base, render distance 2–12, FPS counter toggle), field-by-field validation + clamping, stored in `localStorage` key `blockora.settings.v1` (small per-browser preferences only; every access in try/catch, in-memory defaults without storage). `SETTINGS_CONFIG`, `PAUSE_CONFIG`.
+* Applied live: FOV → camera projection; sensitivity → look deltas; render distance → `ChunkManager.setRadius` (grow streams in nearest-first, shrink unloads beyond radius + ring and removes meshes, meshed-once rule holds), camera far + fog, and mob distances via `mobDistancesFor(rd)` (despawn rd·16, spawn inside it; invariant tested for rd 2–12). Render distance applies on slider release, not while dragging. Geometry pool free-list cap now derives from the max render distance (12).
+* `src/gameplay/pause.ts` + `src/ui/PauseMenu.ts` (replaces `PointerLockHint`): paused = pointer not locked, no inventory / chest screen, not dead, outside a 0.75 s lock-request grace. Frozen: player physics, survival, game time, regen, mobs / spawning, item drops, block actions (`simulationDt`); still running: rendering, chunk streaming, UI, autosave checks. Starts as "Click to play", then "Paused" with Resume / Settings / Save (`SaveScheduler.flushAndWait`; disabled with a reason when saving is blocked or unavailable). `src/ui/SettingsScreen.ts`, `src/ui/FpsCounter.ts`.
+* Verified in real Chrome: pause freezes time / exhaustion, Save writes IndexedDB, FOV 60 vs 110, render distance 4 vs 10 (68 vs 297 draw calls, 121 vs 529 loaded chunks, fog far 64 vs 160), settings persist across reload, inventory / death screens unaffected, one overlay at a time, no page errors. Codex review PASS_WITH_NOTES (first round, no findings).
 
 ## 2026-09-30 — Phase 8 pooled chunk geometries (WebGL2 VAO leak)
 
@@ -585,11 +593,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (71 files, 1161 tests)
+pnpm test → PASS (74 files, 1195 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9: pause menu (Esc while playing → Resume / Settings / Save & quit to title placeholder) + settings screen (FOV, mouse sensitivity, render distance, show FPS/F3 hint) persisted per browser (small settings record; world data stays in IndexedDB), applied live; then main menu with Continue / New world (random seed, confirm before replacing the existing save) and a loading screen.
+Phase 9: main menu (title screen before the world loads: Continue if a save exists, New world with a random seed and a confirm step before replacing the existing save, Settings) + loading screen while the spawn area warms up; pause menu gains "Save & quit to title". Also covers the "no new-world UI" and blocked-save reset gaps in Known Issues.

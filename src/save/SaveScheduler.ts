@@ -12,6 +12,7 @@ export class SaveScheduler {
   private elapsed = 0;
   private inFlight = false;
   private flushQueued = false;
+  private waiters: ((succeeded: boolean) => void)[] = [];
 
   constructor(
     private readonly intervalSeconds: number,
@@ -45,20 +46,44 @@ export class SaveScheduler {
     this.run();
   }
 
+  /**
+   * Like `flush()`, resolving once the save that covers this call finished:
+   * true on success, false when it failed (also reported through `onError`).
+   * Never rejects.
+   */
+  flushAndWait(): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.waiters.push(resolve);
+      this.flush();
+    });
+  }
+
   private run(): void {
     this.inFlight = true;
+    let succeeded = true;
     let pending: Promise<void>;
     try {
       pending = this.task();
     } catch (error) {
       pending = Promise.reject(error);
     }
-    void pending.catch(this.onError).finally(() => {
-      this.inFlight = false;
-      if (this.flushQueued) {
-        this.flushQueued = false;
-        this.flush();
-      }
-    });
+    void pending
+      .catch((error: unknown) => {
+        succeeded = false;
+        this.onError(error);
+      })
+      .finally(() => {
+        this.inFlight = false;
+        if (this.flushQueued) {
+          this.flushQueued = false;
+          this.flush(); // waiters stay queued for the save that starts now
+          return;
+        }
+        const settled = this.waiters;
+        this.waiters = [];
+        for (const resolve of settled) {
+          resolve(succeeded);
+        }
+      });
   }
 }

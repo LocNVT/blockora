@@ -6,7 +6,7 @@ import type { EntityStore } from './EntityStore';
 import { mobDefinition } from './mobDefinitions';
 import { updateMobAi, type HostileAiContext, type Rng } from './mobAI';
 import { updateMobPhysics } from './mobPhysics';
-import { attemptSpawns, despawnFarMobs, despawnHostilesInDaylight } from './mobSpawning';
+import { attemptSpawns, despawnFarMobs, despawnHostilesInDaylight, type MobDistances } from './mobSpawning';
 
 /** Everything updateMobs needs from the outside world, gathered once per call. */
 export interface UpdateMobsDeps {
@@ -23,6 +23,8 @@ export interface UpdateMobsDeps {
   readonly daylight: number;
   /** Applies damage a hostile mob dealt to the player (kept as a port so entities never import player code). */
   readonly onAttackPlayer: (damage: number) => void;
+  /** Spawn / despawn distances for the live render distance (see `mobDistancesFor`); default: the MOB_CONFIG values. */
+  readonly distances?: MobDistances;
 }
 
 /** Mutable spawn-wave timer, owned by the caller (e.g. main.ts) and passed in each frame — avoids global state. */
@@ -67,9 +69,9 @@ export function updateMobs(store: EntityStore, dt: number, timer: MobSpawnTimer,
   timer.secondsUntilNextWave -= clampedDt;
   if (timer.secondsUntilNextWave <= 0) {
     timer.secondsUntilNextWave += MOB_CONFIG.spawnInterval;
-    attemptSpawns(deps.store, deps.registry, store, deps.playerPosition, deps.rng, deps.daylight);
+    attemptSpawns(deps.store, deps.registry, store, deps.playerPosition, deps.rng, deps.daylight, deps.distances);
   }
 
   despawnHostilesInDaylight(deps.store, store, deps.daylight, clampedDt, deps.rng);
-  despawnFarMobs(deps.store, store, deps.playerPosition);
+  despawnFarMobs(deps.store, store, deps.playerPosition, deps.distances);
 }
