@@ -148,7 +148,7 @@ export function updateMobPhysics(
     mob.velocity.x = moveX;
     mob.velocity.z = moveZ;
   }
-  mob.velocity.y = Math.max(mob.velocity.y - MOB_CONFIG.gravity * dt, -MOB_CONFIG.maxFallSpeed);
+  mob.velocity.y = Math.max(mob.velocity.y - MOB_CONFIG.gravity * dt, -def.maxFallSpeed);
 
   const aabb = buildMobAabb(mob.position, halfWidth, height);
   const dx = mob.velocity.x * dt;

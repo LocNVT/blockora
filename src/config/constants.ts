@@ -477,6 +477,49 @@ export const PIG_CONFIG = {
   drops: [{ itemId: 26 /* ItemId.RawPork, kept numeric to avoid an import cycle */, min: 1, max: 3 }],
 } as const;
 
+export const COW_CONFIG = {
+  halfWidth: 0.45,
+  height: 1.3,
+  /** Slow, placid wander speed (blocks/s). */
+  walkSpeed: 0.9,
+  idleDurationMin: 2,
+  idleDurationMax: 5,
+  wanderDurationMin: 2,
+  wanderDurationMax: 5,
+  /** Relative likelihood of spawning a Cow vs other passive mobs. */
+  spawnWeight: 1,
+  /** Max cows alive at once (also bounded by MOB_CONFIG.maxPassiveMobs, shared with every passive type). */
+  maxPerArea: 6,
+  maxHealth: 10,
+  fleeSpeed: 2,
+  fleeDuration: 3,
+  /** Drops rolled uniformly in [min, max] per entry; itemId 27 = ItemId.RawBeef (numeric to avoid an import cycle). */
+  drops: [{ itemId: 27, min: 1, max: 3 }],
+} as const;
+
+export const CHICKEN_CONFIG = {
+  halfWidth: 0.2,
+  height: 0.7,
+  /** Quick, twitchy wander speed (blocks/s). */
+  walkSpeed: 1.4,
+  idleDurationMin: 0.8,
+  idleDurationMax: 2.5,
+  /** Short wanders. */
+  wanderDurationMin: 0.8,
+  wanderDurationMax: 2,
+  /** Relative likelihood of spawning a Chicken vs other passive mobs. */
+  spawnWeight: 1,
+  /** Max chickens alive at once (also bounded by MOB_CONFIG.maxPassiveMobs, shared with every passive type). */
+  maxPerArea: 6,
+  maxHealth: 4,
+  fleeSpeed: 2.6,
+  fleeDuration: 2.5,
+  /** Terminal downward speed (blocks/s) while airborne: chickens flutter down instead of dropping. Mobs take no fall damage. */
+  maxFallSpeed: 2.5,
+  /** Drops rolled uniformly in [min, max] per entry; itemId 28 = ItemId.RawChicken (numeric to avoid an import cycle). */
+  drops: [{ itemId: 28, min: 1, max: 1 }],
+} as const;
+
 export const COMBAT_CONFIG = {
   /** Damage dealt by an empty-hand melee attack. */
   handDamage: 1,

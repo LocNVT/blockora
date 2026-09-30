@@ -6,7 +6,7 @@
 
 ## Current Task
 
-None in progress — waiting on the owner (first deploy, real-hardware F3 numbers) or a new direction.
+None in progress. Uncommitted in the working tree (owner's, not part of the cow / chicken commit): `PLAYER_CONFIG.jumpVelocity` 5 → 6.5, its regression test in `tests/playerPhysics.test.ts`, and its review in `docs/CODEX_REVIEW.md`.
 
 ---
 
@@ -165,14 +165,14 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * A greedy mesher must only merge faces with equal light.
 * Pigs use a lit `MeshStandardMaterial` scaled by sampled voxel light (chunks are unlit), so mob vs terrain brightness can differ slightly; `maxPerArea` is a global count. Pigs are rare near the default spawn (little grass).
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
-* Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
+* Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; models are simple (no chicken comb / tail, no cow udder / tail); a capped type's spawn attempt is skipped rather than re-rolled.
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
 * Mobile: no touch controls (keyboard + mouse required; Try anyway only helps tablets with keyboards / trackpads); `index.html` uses `100vw / 100vh` (mobile URL-bar quirks); no real-device testing.
 * Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
 * Textures: ore art verified by atlas sheet + tests only (no cave-wall screenshot); ore cluster count can be below the target on some seeds (min 10 ore pixels enforced); stone cracks could read slightly like ore at a distance; atlas generation ~6.6 ms slower on the cold first call.
 * Graphics: fog-off through a real day/night change and the 60 FPS cap are unit-tested only (headless is paused / below 60 FPS); fog off shows chunk streaming edges; a capped first frame may wait one interval; the limiter's 2 ms jitter tolerance lets a display refresh just above the cap (e.g. 62 Hz vs cap 60) render every callback (~3 % over; Codex minor, kept for vsync jitter at common rates).
 * Errors: a frame-failure save flush may store a partially updated frame; errors on the title screen count as pre-first-frame (fatal); after a window-event fatal, bootstrap may keep running under the overlay; banners can briefly overlap; the precompile-failure warning stays console-only.
-* Audio: timbres are untuned (never listened to); one shared mob-idle timer; only Pig / Shambler have sounds; voice stealing hard-cuts the oldest voice.
+* Audio: timbres are untuned (never listened to); one shared mob-idle timer; all mobs have sounds; voice stealing hard-cuts the oldest voice.
 * Pause / menu: headless Chrome can't grant pointer lock (tests fake the lock state); the "unavailable storage" title state is unit-tested only; no 3D title background; switching worlds reloads the page (world built once per page load); the pool may retain free geometries after shrinking render distance;
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving until New world → Replace on the title screen; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
 * Geometry pool: ~20 MB more CPU heap (and matching GPU memory) from capacity slack, capacities drift upward (small sections can take large free geometries); each growth replacement or free-list overflow still leaks one VAO on WebGL2 (bounded, tapers off); F3 "Geometries" includes free pooled geometries. One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
@@ -286,6 +286,16 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Cow + chicken (CLAUDE.md §14 passive mobs complete)
+
+* `MobType.Cow` (2) / `MobType.Chicken` (3), data-driven like the pig (`COW_CONFIG`, `CHICKEN_CONFIG`): cow 0.9 × 1.3, walk 0.9, 10 HP, drops 1–3 Raw Beef (hunger +4); chicken 0.4 × 0.7, walk 1.4, 4 HP, drops 1 Raw Chicken (hunger +2), falls slowly (`MobDefinition.maxFallSpeed` 2.5 for the chicken, 40 for the others; mobs take no fall damage). All flee when hit. Pig / cow / chicken share `maxPassiveMobs` via spawn weights (1 / 1 / 1) and per-type `maxPerArea`.
+* New items `RawBeef` (27) / `RawChicken` (28) with original icon tiles appended to the atlas (tiles 31 / 32; existing indices unchanged). Original synthesised sounds: cow moo (saw + triangle, slow pitch bend), chicken clucks; idle / hurt / death.
+* `MobRenderer`: data-driven cow (body, side patches, head, horns, snout, legs) and chicken (body, head, beak, wattle, legs, flapping wings) models → max 20 mob draw calls.
+* Fix (pre-existing since Phase 5): part InstancedMeshes were first drawn with `instanceColor === null` (created lazily by the first `setColorAt`, i.e. only once a mob existed), so three cached a pipeline without instance colours and every mob part rendered in one flat colour — only unnoticed because the Phase 5 test pig spawned before the first render. `createPartMesh` now allocates a white `instanceColor` at creation and growth (regression test).
+* Mob lighting now matches chunks: shared unlit `MeshBasicMaterial({ vertexColors: true })` + the chunk face shade baked into each part box (`createShadedBoxGeometry`), so colour = part colour × voxel-light brightness × face shade (previously the lit material added the blue hemisphere sky light on top → blue-grey cast). Verified: cow body RGB (66, 87, 91) → (190, 186, 175) cream; night ≈ 0.47 × day with hue preserved.
+* Verified in real Chrome: natural spawns mix all three (12 after 120 s: 7 pig / 2 cow / 3 chicken on seed 42), kills drop the right items, eating raises hunger, a dropped chicken falls at 2.5 blocks/s vs a pig's 18.6.
+* Codex review PASS_WITH_NOTES (first round; only note: the working-tree diff also held the owner's separate `jumpVelocity` fix, no issue found). Review text kept in PROGRESS only this time — `docs/CODEX_REVIEW.md` currently holds the owner's uncommitted jump-fix review and was not overwritten.
 
 ## 2026-09-30 — Phase 8 follow-up: chunk cache
 
@@ -673,7 +683,7 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (85 files, 1359 tests)
+pnpm test → PASS (87 files, 1386 tests)
 ```
 
 ---

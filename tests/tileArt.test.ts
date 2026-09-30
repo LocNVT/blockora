@@ -77,6 +77,8 @@ const EXPECTED_HASHES: Record<string, string> = {
   "iron_ore": "9b5eada2",
   "leaves": "c6afd965",
   "planks": "be735fcb",
+  "raw_beef": "488da1f0",
+  "raw_chicken": "8cacb0e6",
   "raw_pork": "8c7fa84c",
   "sand": "53248f6d",
   "stick": "7bfe5d3e",
@@ -94,15 +96,17 @@ const EXPECTED_HASHES: Record<string, string> = {
 };
 
 describe('tile art layout', () => {
-  it('keeps 16x16 tiles, the 31 tile names and the 8-column layout', () => {
+  it('keeps 16x16 tiles, the 33 tile names and the 8-column layout', () => {
     expect(SIZE).toBe(16);
-    expect(TILE_NAMES.length).toBe(31);
+    expect(TILE_NAMES.length).toBe(33);
     expect(LAYOUT.columns).toBe(8);
     expect(ATLAS.length).toBe(LAYOUT.width * LAYOUT.height * 4);
     expect(tileIndex('grass_top')).toBe(0);
     expect(tileIndex('stone')).toBe(3);
     expect(tileIndex('chest_side')).toBe(20);
     expect(tileIndex('raw_pork')).toBe(30);
+    expect(tileIndex('raw_beef')).toBe(31);
+    expect(tileIndex('raw_chicken')).toBe(32);
   });
 });
 
@@ -142,6 +146,8 @@ describe('tile alpha rules', () => {
     'stone_shovel',
     'apple',
     'raw_pork',
+    'raw_beef',
+    'raw_chicken',
   ]);
 
   it('every block tile except glass, leaves, water and torch is fully opaque', () => {

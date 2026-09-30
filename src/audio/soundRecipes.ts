@@ -337,6 +337,61 @@ const SHAMBLER_DEATH: SoundRecipe = {
   variation: { pitchCents: 150, filter: 0.1, gain: 0.08 },
 };
 
+/** Cow: a long low "moo" that rises then sags, saw body plus a triangle an octave up for warmth. */
+const COW_IDLE: SoundRecipe = {
+  id: 'cow.idle',
+  layers: [
+    tone('sawtooth', 110, 150, 0.55, env(0.12, 0.15, 0.7, 0.35, 0.3), filt('lowpass', 520, 1.4)),
+    tone('triangle', 220, 300, 0.35, env(0.12, 0.15, 0.7, 0.35, 0.3), filt('lowpass', 900)),
+    tone('sawtooth', 150, 95, 0.4, env(0.02, 0.1, 0.6, 0.25, 0.3), filt('lowpass', 480, 1.4), 0.55),
+  ],
+  variation: { pitchCents: 220, filter: 0.12, gain: 0.1 },
+};
+
+const COW_HURT: SoundRecipe = {
+  id: 'cow.hurt',
+  layers: [
+    tone('sawtooth', 190, 130, 0.65, env(0.02, 0.08, 0.6, 0.18, 0.2), filt('lowpass', 700, 1.3)),
+    tone('triangle', 380, 260, 0.3, env(0.02, 0.08, 0.5, 0.15, 0.18), filt('lowpass', 1000)),
+  ],
+  variation: { pitchCents: 200, filter: 0.12, gain: 0.1 },
+};
+
+const COW_DEATH: SoundRecipe = {
+  id: 'cow.death',
+  layers: [
+    tone('sawtooth', 170, 60, 0.7, env(0.03, 0.15, 0.6, 0.4, 0.45), filt('lowpass', 480, 1.3)),
+    tone('triangle', 340, 120, 0.3, env(0.03, 0.15, 0.5, 0.3, 0.4), filt('lowpass', 700)),
+  ],
+  variation: { pitchCents: 150, filter: 0.1, gain: 0.08 },
+};
+
+/** Chicken: two or three short, high, clipped "cluck" blips. */
+const CHICKEN_IDLE: SoundRecipe = {
+  id: 'chicken.idle',
+  layers: [
+    tone('square', 760, 560, 0.3, env(0.003, 0.02, 0.5, 0.02, 0.03), filt('bandpass', 1500, 2)),
+    tone('square', 820, 600, 0.28, env(0.003, 0.02, 0.5, 0.02, 0.03), filt('bandpass', 1600, 2), 0.13),
+    tone('square', 700, 520, 0.26, env(0.003, 0.02, 0.5, 0.02, 0.04), filt('bandpass', 1400, 2), 0.27),
+  ],
+  variation: { pitchCents: 250, filter: 0.12, gain: 0.1 },
+};
+
+const CHICKEN_HURT: SoundRecipe = {
+  id: 'chicken.hurt',
+  layers: [
+    tone('square', 1100, 700, 0.3, env(0.003, 0.03, 0.5, 0.06, 0.05), filt('bandpass', 1800, 1.5)),
+    tone('triangle', 1400, 900, 0.3, env(0.003, 0.03, 0.4, 0.05, 0.05), filt('highpass', 900)),
+  ],
+  variation: { pitchCents: 300, filter: 0.12, gain: 0.1 },
+};
+
+const CHICKEN_DEATH: SoundRecipe = {
+  id: 'chicken.death',
+  layers: [tone('square', 900, 260, 0.32, env(0.003, 0.06, 0.5, 0.12, 0.12), filt('bandpass', 1200, 1.2))],
+  variation: { pitchCents: 200, filter: 0.1, gain: 0.08 },
+};
+
 /** A recipe plus how loud it plays and where (if positional) it comes from. */
 export interface SoundRequest {
   readonly recipe: SoundRecipe;
@@ -358,6 +413,12 @@ function mobRecipe(mobType: number, kind: 'idle' | 'hurt' | 'death'): SoundRecip
   }
   if (mobType === MobType.Shambler) {
     return kind === 'idle' ? SHAMBLER_IDLE : kind === 'hurt' ? SHAMBLER_HURT : SHAMBLER_DEATH;
+  }
+  if (mobType === MobType.Cow) {
+    return kind === 'idle' ? COW_IDLE : kind === 'hurt' ? COW_HURT : COW_DEATH;
+  }
+  if (mobType === MobType.Chicken) {
+    return kind === 'idle' ? CHICKEN_IDLE : kind === 'hurt' ? CHICKEN_HURT : CHICKEN_DEATH;
   }
   return null;
 }
@@ -440,5 +501,11 @@ export function allRecipes(): readonly SoundRecipe[] {
     SHAMBLER_IDLE,
     SHAMBLER_HURT,
     SHAMBLER_DEATH,
+    COW_IDLE,
+    COW_HURT,
+    COW_DEATH,
+    CHICKEN_IDLE,
+    CHICKEN_HURT,
+    CHICKEN_DEATH,
   ];
 }

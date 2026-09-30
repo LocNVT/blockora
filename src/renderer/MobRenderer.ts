@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { ChunkStore } from '../world/ChunkStore';
 import { getLightAt } from '../world/light/LightSampler';
 import { skyLightOf, blockLightOf } from '../world/light/lightNibbles';
-import { effectiveLightLevel, lightCurve } from './lightShading';
+import { effectiveLightLevel, faceShade, lightCurve } from './lightShading';
 import { getChunkDaylight } from './chunkMeshes';
 import type { MobEntity } from '../entities/EntityStore';
 import { MobType } from '../entities/mobDefinitions';
@@ -72,16 +72,202 @@ const SHAMBLER_ARM_SWAY = 0.2;
 const SHAMBLER_LEG_SWING = 0.6;
 const SHAMBLER_SWING_FREQUENCY = 1.6;
 
-type PartKey = 'body' | 'head' | 'snout' | 'leg' | 'sTorso' | 'sHead' | 'sArm' | 'sLeg';
+type PartKey =
+  | 'body'
+  | 'head'
+  | 'snout'
+  | 'leg'
+  | 'sTorso'
+  | 'sHead'
+  | 'sArm'
+  | 'sLeg'
+  | 'cBody'
+  | 'cPatch'
+  | 'cHead'
+  | 'cHorn'
+  | 'cSnout'
+  | 'cLeg'
+  | 'kBody'
+  | 'kHead'
+  | 'kBeak'
+  | 'kWattle'
+  | 'kLeg'
+  | 'kWing';
+
+type Size3 = { x: number; y: number; z: number };
+
+/** How one part instance moves: fixed, swinging about its top (leg), or flapping outward about its top (wing). */
+type PartMotion = 'none' | 'leg' | 'wing';
+
+/**
+ * One box instance of a mob model. For 'none' `y` is the box centre; for limbs
+ * (leg / wing) `y` is the pivot at the top of the box, which hangs down from it.
+ * `sign` picks the side / phase of a limb.
+ */
+interface PartInstance {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly motion: PartMotion;
+  readonly sign: number;
+}
+
+/** All instances of one part type on one mob: they share a single InstancedMesh. */
+interface ModelPart {
+  readonly key: PartKey;
+  readonly size: Size3;
+  readonly color: THREE.Color;
+  readonly instances: readonly PartInstance[];
+}
+
+interface MobModel {
+  readonly mobType: MobType;
+  /** Height above the feet at which voxel light is sampled for the whole mob. */
+  readonly lightY: number;
+  readonly parts: readonly ModelPart[];
+  /** Max leg swing (radians) and swing cycles per block walked. */
+  readonly legSwing: number;
+  readonly swingFrequency: number;
+}
+
+const fixed = (x: number, y: number, z: number): PartInstance => ({ x, y, z, motion: 'none', sign: 1 });
+const limb = (x: number, y: number, z: number, motion: PartMotion, sign: number): PartInstance => ({
+  x,
+  y,
+  z,
+  motion,
+  sign,
+});
+
+/** Original cow: cream body with dark side patches, brown head with horns and a pink snout, 4 legs (1.3 tall with horns, 0.9 wide). */
+const COW_LEG_SIZE: Size3 = { x: 0.16, y: 0.5, z: 0.16 };
+const COW_LEG_X = 0.2;
+const COW_LEG_Z = 0.36;
+const COW_MODEL: MobModel = {
+  mobType: MobType.Cow,
+  lightY: 0.8,
+  legSwing: 0.45,
+  swingFrequency: 1.8,
+  parts: [
+    { key: 'cBody', size: { x: 0.7, y: 0.6, z: 1.0 }, color: new THREE.Color(0xeee9dc), instances: [fixed(0, 0.8, 0)] },
+    {
+      key: 'cPatch',
+      size: { x: 0.2, y: 0.32, z: 0.34 },
+      color: new THREE.Color(0x5a4034),
+      instances: [fixed(0.26, 0.86, 0.16), fixed(-0.26, 0.9, -0.2)],
+    },
+    { key: 'cHead', size: { x: 0.4, y: 0.4, z: 0.35 }, color: new THREE.Color(0x9a6a44), instances: [fixed(0, 1.02, -0.62)] },
+    {
+      key: 'cHorn',
+      size: { x: 0.06, y: 0.14, z: 0.06 },
+      color: new THREE.Color(0xd9d2b0),
+      instances: [fixed(-0.17, 1.29, -0.6), fixed(0.17, 1.29, -0.6)],
+    },
+    { key: 'cSnout', size: { x: 0.26, y: 0.16, z: 0.1 }, color: new THREE.Color(0xe0aaa0), instances: [fixed(0, 0.94, -0.85)] },
+    {
+      key: 'cLeg',
+      size: COW_LEG_SIZE,
+      color: new THREE.Color(0xcfc8b8),
+      instances: [
+        limb(-COW_LEG_X, COW_LEG_SIZE.y, -COW_LEG_Z, 'leg', 1),
+        limb(COW_LEG_X, COW_LEG_SIZE.y, -COW_LEG_Z, 'leg', -1),
+        limb(-COW_LEG_X, COW_LEG_SIZE.y, COW_LEG_Z, 'leg', -1),
+        limb(COW_LEG_X, COW_LEG_SIZE.y, COW_LEG_Z, 'leg', 1),
+      ],
+    },
+  ],
+};
+
+/** Original chicken: white body, head with yellow beak and red wattle, 2 legs, 2 wings that flap (0.4 wide, 0.7 tall). */
+const CHICKEN_LEG_SIZE: Size3 = { x: 0.06, y: 0.25, z: 0.06 };
+const CHICKEN_WING_SIZE: Size3 = { x: 0.04, y: 0.2, z: 0.26 };
+const CHICKEN_MODEL: MobModel = {
+  mobType: MobType.Chicken,
+  lightY: 0.4,
+  legSwing: 0.7,
+  swingFrequency: 3,
+  parts: [
+    { key: 'kBody', size: { x: 0.3, y: 0.28, z: 0.4 }, color: new THREE.Color(0xf4f1ea), instances: [fixed(0, 0.39, 0)] },
+    { key: 'kHead', size: { x: 0.16, y: 0.2, z: 0.16 }, color: new THREE.Color(0xf4f1ea), instances: [fixed(0, 0.6, -0.16)] },
+    { key: 'kBeak', size: { x: 0.08, y: 0.05, z: 0.09 }, color: new THREE.Color(0xe8b030), instances: [fixed(0, 0.6, -0.27)] },
+    { key: 'kWattle', size: { x: 0.04, y: 0.07, z: 0.04 }, color: new THREE.Color(0xc82828), instances: [fixed(0, 0.5, -0.23)] },
+    {
+      key: 'kLeg',
+      size: CHICKEN_LEG_SIZE,
+      color: new THREE.Color(0xe0a030),
+      instances: [limb(-0.07, CHICKEN_LEG_SIZE.y, 0, 'leg', 1), limb(0.07, CHICKEN_LEG_SIZE.y, 0, 'leg', -1)],
+    },
+    {
+      key: 'kWing',
+      size: CHICKEN_WING_SIZE,
+      color: new THREE.Color(0xe2ddd0),
+      instances: [limb(-0.17, 0.52, 0.02, 'wing', -1), limb(0.17, 0.52, 0.02, 'wing', 1)],
+    },
+  ],
+};
+
+const MOB_MODELS: readonly MobModel[] = [COW_MODEL, CHICKEN_MODEL];
+
+/** Airborne mobs with vertical speed below this (blocks/s, negative = falling) flap their wings hard. */
+const FLAP_FALL_SPEED = -0.5;
+/** Wing roll (radians) while falling: mean and amplitude; flap cycles per second. */
+const FLAP_FALL_MEAN = 0.8;
+const FLAP_FALL_AMPLITUDE = 0.4;
+const FLAP_FALL_FREQUENCY = 8;
+/** Wing roll while walking on the ground / resting; horizontal speed (blocks/s) above which walking flutter starts. */
+const FLAP_WALK_MEAN = 0.15;
+const FLAP_WALK_AMPLITUDE = 0.12;
+const FLAP_WALK_FREQUENCY = 5;
+const FLAP_REST_ROLL = 0.05;
+const FLAP_WALK_MIN_SPEED = 0.3;
 
 interface PartBucket {
   mesh: THREE.InstancedMesh;
   capacity: number;
 }
 
-function createBoxGeometry(size: { x: number; y: number; z: number }): THREE.BoxGeometry {
-  return new THREE.BoxGeometry(size.x, size.y, size.z);
+/**
+ * A part InstancedMesh with its per-instance colour attribute allocated up
+ * front (white). The colour attribute must exist before the mesh is first
+ * compiled/rendered: three caches the pipeline per material + object
+ * signature, and a mesh first drawn with `instanceColor === null` (no mobs
+ * alive yet) gets a pipeline without instance colours, so later `setColorAt`
+ * calls would have no effect and every part renders in the base colour.
+ */
+export function createPartMesh(
+  geometry: THREE.BufferGeometry,
+  material: THREE.Material,
+  capacity: number,
+): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(geometry, material, capacity);
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3).fill(1), 3);
+  mesh.count = 0;
+  mesh.frustumCulled = false;
+  return mesh;
 }
+
+/**
+ * Box for one mob part with the chunk mesher's per-face shade (top / sides /
+ * bottom) baked into vertex colours. Mobs use an unlit material like chunks,
+ * so final colour = part colour x voxel-light brightness (instance colour) x
+ * face shade, matching the terrain instead of picking up the scene's
+ * hemisphere / sun light on top. Shade uses the part's local normals.
+ */
+export function createShadedBoxGeometry(size: { x: number; y: number; z: number }): THREE.BoxGeometry {
+  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const normals = geometry.getAttribute('normal');
+  const colors = new Float32Array(normals.count * 3);
+  for (let i = 0; i < normals.count; i += 1) {
+    const shade = faceShade(normals.getX(i), normals.getY(i));
+    colors[i * 3] = shade;
+    colors[i * 3 + 1] = shade;
+    colors[i * 3 + 2] = shade;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
+}
+
+const createBoxGeometry = createShadedBoxGeometry;
 
 const dummyMatrix = new THREE.Matrix4();
 const dummyPosition = new THREE.Vector3();
@@ -103,16 +289,18 @@ const worldOffset = new THREE.Vector3();
 export class MobRenderer {
   private readonly scene: THREE.Scene;
   private readonly store: ChunkStore;
-  private readonly material: THREE.MeshStandardMaterial;
+  private readonly material: THREE.MeshBasicMaterial;
   private readonly geometryByPart: Record<PartKey, THREE.BoxGeometry>;
   private readonly bucketByPart = new Map<PartKey, PartBucket>();
   /** Per-mob accumulated horizontal distance walked, for leg swing phase (keyed by mob id). */
   private readonly walkedDistanceById = new Map<number, number>();
+  /** Seconds of accumulated render time; drives wing flapping. */
+  private clock = 0;
 
   constructor(scene: THREE.Scene, store: ChunkStore) {
     this.scene = scene;
     this.store = store;
-    this.material = new THREE.MeshStandardMaterial({ vertexColors: true });
+    this.material = new THREE.MeshBasicMaterial({ vertexColors: true });
     this.geometryByPart = {
       body: createBoxGeometry(PIG_BODY_SIZE),
       head: createBoxGeometry(PIG_HEAD_SIZE),
@@ -122,7 +310,10 @@ export class MobRenderer {
       sHead: createBoxGeometry(SHAMBLER_HEAD_SIZE),
       sArm: createBoxGeometry(SHAMBLER_ARM_SIZE),
       sLeg: createBoxGeometry(SHAMBLER_LEG_SIZE),
-    };
+      ...Object.fromEntries(
+        MOB_MODELS.flatMap((model) => model.parts.map((part) => [part.key, createBoxGeometry(part.size)] as const)),
+      ),
+    } as Record<PartKey, THREE.BoxGeometry>;
   }
 
   private bucketForPart(part: PartKey): PartBucket {
@@ -130,9 +321,7 @@ export class MobRenderer {
     if (existing !== undefined) {
       return existing;
     }
-    const mesh = new THREE.InstancedMesh(this.geometryByPart[part], this.material, INITIAL_INSTANCE_CAPACITY);
-    mesh.count = 0;
-    mesh.frustumCulled = false;
+    const mesh = createPartMesh(this.geometryByPart[part], this.material, INITIAL_INSTANCE_CAPACITY);
     this.scene.add(mesh);
     const bucket: PartBucket = { mesh, capacity: INITIAL_INSTANCE_CAPACITY };
     this.bucketByPart.set(part, bucket);
@@ -144,9 +333,7 @@ export class MobRenderer {
     while (newCapacity < minCapacity) {
       newCapacity *= INSTANCE_GROWTH_FACTOR;
     }
-    const newMesh = new THREE.InstancedMesh(this.geometryByPart[part], this.material, newCapacity);
-    newMesh.frustumCulled = false;
-    newMesh.count = 0;
+    const newMesh = createPartMesh(this.geometryByPart[part], this.material, newCapacity);
     this.scene.remove(bucket.mesh);
     bucket.mesh.dispose();
     this.scene.add(newMesh);
@@ -173,11 +360,12 @@ export class MobRenderer {
 
   /**
    * Rebuilds every instanced mesh's transforms/colors from the current mob
-   * list. Pig and Shambler are implemented; any other mob type renders as
-   * nothing rather than throwing.
+   * list. Pig, Shambler, Cow and Chicken are implemented; any other mob type
+   * renders as nothing rather than throwing.
    */
   update(mobs: readonly MobEntity[], dt: number): void {
     const frameDt = Math.max(0, dt);
+    this.clock += frameDt;
     const pigs = mobs.filter((mob) => mob.type === MobType.Pig);
     const shamblers = mobs.filter((mob) => mob.type === MobType.Shambler);
 
@@ -269,6 +457,9 @@ export class MobRenderer {
     }
 
     this.updateShamblers(shamblers, frameDt, liveIds);
+    for (const model of MOB_MODELS) {
+      this.updateModel(model, mobs.filter((mob) => mob.type === model.mobType), frameDt, liveIds);
+    }
 
     // Drop walked-distance tracking for mobs that no longer exist.
     for (const id of this.walkedDistanceById.keys()) {
@@ -363,6 +554,83 @@ export class MobRenderer {
     }
 
     for (const bucket of [torsoBucket, headBucket, armBucket, legBucket]) {
+      bucket.mesh.instanceMatrix.needsUpdate = true;
+      if (bucket.mesh.instanceColor !== null) {
+        bucket.mesh.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+
+  /**
+   * Draws every mob of one data-driven model (cow, chicken): each part type has
+   * ONE shared InstancedMesh. Legs swing with distance walked; wings flap
+   * faster while airborne and falling.
+   */
+  private updateModel(model: MobModel, mobs: readonly MobEntity[], frameDt: number, liveIds: Set<number>): void {
+    const buckets = model.parts.map((part) => this.readyBucket(part.key, mobs.length * part.instances.length));
+
+    for (let i = 0; i < mobs.length; i += 1) {
+      const mob = mobs[i];
+      if (mob === undefined) {
+        continue;
+      }
+      liveIds.add(mob.id);
+
+      const speed = Math.hypot(mob.velocity.x, mob.velocity.z);
+      const distance = (this.walkedDistanceById.get(mob.id) ?? 0) + speed * frameDt;
+      this.walkedDistanceById.set(mob.id, distance);
+
+      const brightness = this.brightnessAt(mob.position.x, mob.position.y + model.lightY, mob.position.z);
+      const hurt = mob.hurtFlashTimer > 0;
+      const cosYaw = Math.cos(mob.yaw);
+      const sinYaw = Math.sin(mob.yaw);
+      const swingPhase = distance * model.swingFrequency * Math.PI * 2 + mob.id;
+      const legScale = Math.min(1, speed);
+      const falling = !mob.onGround && mob.velocity.y < FLAP_FALL_SPEED;
+      const flapPhase = this.clock * Math.PI * 2 + mob.id;
+      const wingRoll = falling
+        ? FLAP_FALL_MEAN + Math.sin(flapPhase * FLAP_FALL_FREQUENCY) * FLAP_FALL_AMPLITUDE
+        : speed > FLAP_WALK_MIN_SPEED
+          ? FLAP_WALK_MEAN + Math.sin(flapPhase * FLAP_WALK_FREQUENCY) * FLAP_WALK_AMPLITUDE
+          : FLAP_REST_ROLL;
+
+      model.parts.forEach((part, partIndex) => {
+        const bucket = buckets[partIndex];
+        if (bucket === undefined) {
+          return;
+        }
+        const half = part.size.y / 2;
+        part.instances.forEach((inst, instIndex) => {
+          let pitch = 0;
+          let roll = 0;
+          let localX = inst.x;
+          let localY = inst.y;
+          let localZ = inst.z;
+          if (inst.motion === 'leg') {
+            pitch = Math.sin(swingPhase) * inst.sign * model.legSwing * legScale;
+            localY = inst.y - half * Math.cos(pitch);
+            localZ = inst.z - half * Math.sin(pitch);
+          } else if (inst.motion === 'wing') {
+            roll = inst.sign * wingRoll;
+            localX = inst.x + half * Math.sin(roll);
+            localY = inst.y - half * Math.cos(roll);
+          }
+          dummyEuler.set(pitch, mob.yaw, roll, 'YXZ');
+          dummyQuaternion.setFromEuler(dummyEuler);
+          dummyPosition.set(
+            mob.position.x + cosYaw * localX + sinYaw * localZ,
+            mob.position.y + localY,
+            mob.position.z - sinYaw * localX + cosYaw * localZ,
+          );
+          dummyMatrix.compose(dummyPosition, dummyQuaternion, dummyScale);
+          const slot = i * part.instances.length + instIndex;
+          bucket.mesh.setMatrixAt(slot, dummyMatrix);
+          bucket.mesh.setColorAt(slot, this.shadeInto(part.color, brightness, hurt));
+        });
+      });
+    }
+
+    for (const bucket of buckets) {
       bucket.mesh.instanceMatrix.needsUpdate = true;
       if (bucket.mesh.instanceColor !== null) {
         bucket.mesh.instanceColor.needsUpdate = true;

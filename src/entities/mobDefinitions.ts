@@ -1,10 +1,12 @@
-import { PIG_CONFIG, SHAMBLER_CONFIG } from '../config/constants';
+import { CHICKEN_CONFIG, COW_CONFIG, MOB_CONFIG, PIG_CONFIG, SHAMBLER_CONFIG } from '../config/constants';
 import type { ItemId } from '../items/items';
 
 /** Mob type ids. Append-only if ever persisted (not saved yet — Phase 5 slice). */
 export const MobType = {
   Pig: 0,
   Shambler: 1,
+  Cow: 2,
+  Chicken: 3,
 } as const;
 
 export type MobType = (typeof MobType)[keyof typeof MobType];
@@ -55,6 +57,8 @@ export interface MobDefinition {
   readonly fleeSpeed: number;
   /** Seconds spent in the 'flee' AI state after being hurt. */
   readonly fleeDuration: number;
+  /** Terminal downward speed (blocks/s) while airborne; low values make a mob glide down (chicken). */
+  readonly maxFallSpeed: number;
   /** Items spawned (via ItemDropSystem) at this mob's position on death. */
   readonly drops: readonly MobDropDefinition[];
   /** Hostile combat stats, or null for passive mobs (which flee when hurt instead of chasing). */
@@ -76,6 +80,7 @@ const PIG_DEFINITION: MobDefinition = {
   maxHealth: PIG_CONFIG.maxHealth,
   fleeSpeed: PIG_CONFIG.fleeSpeed,
   fleeDuration: PIG_CONFIG.fleeDuration,
+  maxFallSpeed: MOB_CONFIG.maxFallSpeed,
   drops: PIG_CONFIG.drops,
   hostile: null,
 };
@@ -95,6 +100,7 @@ const SHAMBLER_DEFINITION: MobDefinition = {
   maxHealth: SHAMBLER_CONFIG.maxHealth,
   fleeSpeed: SHAMBLER_CONFIG.fleeSpeed,
   fleeDuration: SHAMBLER_CONFIG.fleeDuration,
+  maxFallSpeed: MOB_CONFIG.maxFallSpeed,
   drops: SHAMBLER_CONFIG.drops,
   hostile: {
     chaseSpeed: SHAMBLER_CONFIG.chaseSpeed,
@@ -109,8 +115,53 @@ const SHAMBLER_DEFINITION: MobDefinition = {
   },
 };
 
+const COW_DEFINITION: MobDefinition = {
+  type: MobType.Cow,
+  name: 'cow',
+  halfWidth: COW_CONFIG.halfWidth,
+  height: COW_CONFIG.height,
+  walkSpeed: COW_CONFIG.walkSpeed,
+  idleDurationMin: COW_CONFIG.idleDurationMin,
+  idleDurationMax: COW_CONFIG.idleDurationMax,
+  wanderDurationMin: COW_CONFIG.wanderDurationMin,
+  wanderDurationMax: COW_CONFIG.wanderDurationMax,
+  spawnWeight: COW_CONFIG.spawnWeight,
+  maxPerArea: COW_CONFIG.maxPerArea,
+  maxHealth: COW_CONFIG.maxHealth,
+  fleeSpeed: COW_CONFIG.fleeSpeed,
+  fleeDuration: COW_CONFIG.fleeDuration,
+  maxFallSpeed: MOB_CONFIG.maxFallSpeed,
+  drops: COW_CONFIG.drops,
+  hostile: null,
+};
+
+const CHICKEN_DEFINITION: MobDefinition = {
+  type: MobType.Chicken,
+  name: 'chicken',
+  halfWidth: CHICKEN_CONFIG.halfWidth,
+  height: CHICKEN_CONFIG.height,
+  walkSpeed: CHICKEN_CONFIG.walkSpeed,
+  idleDurationMin: CHICKEN_CONFIG.idleDurationMin,
+  idleDurationMax: CHICKEN_CONFIG.idleDurationMax,
+  wanderDurationMin: CHICKEN_CONFIG.wanderDurationMin,
+  wanderDurationMax: CHICKEN_CONFIG.wanderDurationMax,
+  spawnWeight: CHICKEN_CONFIG.spawnWeight,
+  maxPerArea: CHICKEN_CONFIG.maxPerArea,
+  maxHealth: CHICKEN_CONFIG.maxHealth,
+  fleeSpeed: CHICKEN_CONFIG.fleeSpeed,
+  fleeDuration: CHICKEN_CONFIG.fleeDuration,
+  maxFallSpeed: CHICKEN_CONFIG.maxFallSpeed,
+  drops: CHICKEN_CONFIG.drops,
+  hostile: null,
+};
+
 /** Every registered mob definition (passive and hostile), indexed by MobType. */
-export const MOB_DEFINITIONS: readonly MobDefinition[] = [PIG_DEFINITION, SHAMBLER_DEFINITION];
+export const MOB_DEFINITIONS: readonly MobDefinition[] = [
+  PIG_DEFINITION,
+  SHAMBLER_DEFINITION,
+  COW_DEFINITION,
+  CHICKEN_DEFINITION,
+];
 
 export function mobDefinition(type: MobType): MobDefinition {
   const def = MOB_DEFINITIONS[type];

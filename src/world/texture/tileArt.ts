@@ -24,6 +24,12 @@ const PALETTE = {
   rawPork: { r: 224, g: 141, b: 145, a: 255 },
   rawPorkDark: { r: 196, g: 112, b: 118, a: 255 },
   rawPorkFat: { r: 240, g: 205, b: 200, a: 255 },
+  rawBeef: { r: 165, g: 48, b: 52, a: 255 },
+  rawBeefDark: { r: 128, g: 34, b: 40, a: 255 },
+  rawBeefFat: { r: 232, g: 196, b: 186, a: 255 },
+  rawChicken: { r: 232, g: 176, b: 158, a: 255 },
+  rawChickenDark: { r: 208, g: 146, b: 130, a: 255 },
+  rawChickenBone: { r: 238, g: 232, b: 218, a: 255 },
 } as const satisfies Record<string, Rgba>;
 
 /** Diagonal stick icon (a thin brown bar corner-to-corner), transparent elsewhere. */
@@ -145,6 +151,45 @@ function rawPorkPainter(): Painter {
   };
 }
 
+/** Raw-beef icon: a thick dark-red steak with a pale fat rim and two marbling flecks, transparent elsewhere. */
+function rawBeefPainter(): Painter {
+  return (x, y, size, rng): Rgba => {
+    const cx = size / 2;
+    const cy = size / 2;
+    const dx = (x - cx) / (size * 0.42);
+    const dy = (y - cy) / (size * 0.34);
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      return PALETTE.transparent;
+    }
+    if (dist > 0.82) {
+      return jitter(PALETTE.rawBeefFat, 6, rng);
+    }
+    const fleck = Math.abs(x - cx - 2) + Math.abs(y - cy + 1) <= 1 || Math.abs(x - cx + 2) + Math.abs(y - cy - 2) <= 1;
+    if (fleck) {
+      return jitter(PALETTE.rawBeefFat, 6, rng);
+    }
+    return jitter(rng() < 0.3 ? PALETTE.rawBeefDark : PALETTE.rawBeef, 10, rng);
+  };
+}
+
+/** Raw-chicken icon: a pale-pink drumstick (meat blob upper-left, bone shaft with knob toward lower-right), transparent elsewhere. */
+function rawChickenPainter(): Painter {
+  return (x, y, size, rng): Rgba => {
+    const meatDist = Math.hypot((x - size * 0.4) / (size * 0.3), (y - size * 0.4) / (size * 0.27));
+    if (meatDist <= 1) {
+      return jitter(rng() < 0.3 ? PALETTE.rawChickenDark : PALETTE.rawChicken, 8, rng);
+    }
+    const along = Math.abs(x - y) / Math.SQRT2;
+    const shaft = along <= 1.1 && x >= size * 0.5 && x <= size * 0.78;
+    const knobDist = Math.hypot(x - size * 0.82, y - size * 0.82);
+    if (shaft || knobDist <= size * 0.11) {
+      return jitter(PALETTE.rawChickenBone, 6, rng);
+    }
+    return PALETTE.transparent;
+  };
+}
+
 function fallbackPainter(): Painter {
   return (x, y, _size, _rng): Rgba => {
     const checker = (x + y) % 2 === 0;
@@ -189,6 +234,8 @@ const TILE_ARTS: Partial<Record<TileName, TileArt>> = {
   stone_shovel: perPixel(toolPainter(PALETTE.toolHeadStone, shovelHeadTest)),
   apple: perPixel(applePainter()),
   raw_pork: perPixel(rawPorkPainter()),
+  raw_beef: perPixel(rawBeefPainter()),
+  raw_chicken: perPixel(rawChickenPainter()),
 };
 
 function artFor(name: string): TileArt {
