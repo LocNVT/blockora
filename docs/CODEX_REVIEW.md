@@ -1,14 +1,12 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1301 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1321 tests, lint and build pass._
 
 Status: PASS_WITH_NOTES
 
-Task:
-Phase 9 graphics settings
+Task: Phase 9 — better textures
 
-Summary:
-Resolution scaling, fog toggle, and frame-rate cap are connected to settings and the render loop. The changes fit the current roadmap scope.
+Summary: The procedural atlas art keeps the existing tile names, indices, layout and UV use. The new tests check determinism, alpha rules, tile appearance and item icon visibility. I found no concrete critical or important issues.
 
 Critical:
 - None
@@ -17,34 +15,28 @@ Important:
 - None
 
 Minor:
-- `FrameLimiter`’s 2 ms tolerance can render slightly faster than the selected cap when the display callback rate is just above that cap. This is a small boundary effect; no blocker found.
+- The reported cold atlas generation time increased from 5.8 ms to 12.4 ms. This is a one-time startup cost; no blocking performance concern is evident.
 
 Required fixes:
 - None
 
 Tests:
-- Focused tests cover settings validation, pixel ratio bounds, frame limiter behavior, fog toggling, and debug output. Not run during this review.
+- The added tests cover atlas stability, tile hashes, visual properties and item icons. I did not run tests or a build.
 
 Architecture:
-- Graphics utilities are isolated, and settings application remains in the main composition root. No significant coupling or TypeScript issue found by inspection.
+- The art helpers are separated from atlas assembly, and the changes do not affect gameplay systems or atlas layout.
 
 Performance:
-- Resolution scaling updates renderer pixel ratio and size on changes and resizes. The limiter skips simulation and rendering callbacks together, then passes elapsed time across rendered frames.
+- Generation work increased, but the reported cold run remains a small one-time cost. No resource lifecycle concern found.
 
 Reviewed files:
 - `CLAUDE.md`
 - `docs/ROADMAP.md`
 - `docs/PROGRESS.md`
-- `src/config/constants.ts`
-- `src/debug/debugText.ts`
-- `src/main.ts`
-- `src/renderer/frameLimiter.ts`
-- `src/renderer/resolution.ts`
-- `src/renderer/scene.ts`
-- `src/renderer/viewSettings.ts`
-- `src/settings/GameSettings.ts`
-- `src/ui/SettingsScreen.ts`
-- `tests/graphicsSettings.test.ts`
+- `src/world/texture/tileArt.ts`
+- `src/world/texture/tileArtBlocks.ts`
+- `src/world/texture/tilePaint.ts`
+- `tests/tileArt.test.ts`
 
 Recommendation:
-Continue
+- Continue

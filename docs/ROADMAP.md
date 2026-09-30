@@ -249,7 +249,7 @@ on a reasonable desktop.
 
 ---
 
-# Phase 9 — UX & Polish
+# Phase 9 — UX & Polish ✅ (completed 2026-09-30)
 
 * [x] Main menu
 * [x] Pause menu
@@ -262,7 +262,7 @@ on a reasonable desktop.
 * [x] Debug screen
 * [x] Loading screen
 * [x] Error handling
-* [ ] Better textures
+* [x] Better textures
 * [x] Sound effects
 * [x] Ambient audio
 

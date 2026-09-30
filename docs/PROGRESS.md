@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-**Phase 9 — UX & Polish**
+**Phase 10 — Web Deployment**
 
 ## Current Task
 
-Phase 9: better textures.
+Phase 10: web deployment — waiting on the user's hosting choice.
 
 ---
 
@@ -136,9 +136,9 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * [x] Settings
 * [x] Audio
 * [x] Loading screen
-* [ ] Better textures
-* [ ] Better UI
-* [ ] Polish
+* [x] Better textures
+* [x] Better UI
+* [x] Polish
 
 ---
 
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Textures: ore art verified by atlas sheet + tests only (no cave-wall screenshot); ore cluster count can be below the target on some seeds (min 10 ore pixels enforced); stone cracks could read slightly like ore at a distance; atlas generation ~6.6 ms slower on the cold first call.
 * Graphics: fog-off through a real day/night change and the 60 FPS cap are unit-tested only (headless is paused / below 60 FPS); fog off shows chunk streaming edges; a capped first frame may wait one interval; the limiter's 2 ms jitter tolerance lets a display refresh just above the cap (e.g. 62 Hz vs cap 60) render every callback (~3 % over; Codex minor, kept for vsync jitter at common rates).
 * Errors: a frame-failure save flush may store a partially updated frame; errors on the title screen count as pre-first-frame (fatal); after a window-event fatal, bootstrap may keep running under the overlay; banners can briefly overlap; the precompile-failure warning stays console-only.
 * Audio: timbres are untuned (never listened to); one shared mob-idle timer; only Pig / Shambler have sounds; voice stealing hard-cuts the oldest voice.
@@ -268,6 +269,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 better textures
+
+* Procedural 16×16 tile art rewritten (same tile names / indices / 8-column atlas / UVs; no image files): `src/world/texture/tilePaint.ts` (colour helpers, wrapped value noise, wrapped Voronoi cells), `tileArtBlocks.ts` (block painters); each tile has its own seeded PRNG (`mulberry32(seed + imul(tileIndex + 1, 0x9e3779b1))`) so editing one tile never shifts another. Light from the top-left throughout.
+* Tiles: calm stone with faint cracks; ores as lit / shadowed clusters on the exact stone base (coal / iron / gold); cobblestone with mortar; pebbly gravel; fine sand; dirt with pebbles; grass side with a ragged 3–5-row overhang; bark / rings; planks with seams and staggered joints; leaves with transparent holes (alpha-tested material); framed glass with glare; water ripples; new torch, crafting-table and chest faces. Tool icon heads / handles use brightness-only variation (per-channel jitter read as rainbow speckle).
+* Atlas generation: cold 5.8 → 12.4 ms, warm 0.62 → 1.3 ms (median of 20 node runs); `dataUrlForTile` unchanged. Per-tile FNV hash snapshot in `tests/tileArt.test.ts` (update deliberately when the art changes). Codex review PASS_WITH_NOTES (first round; note: cold atlas generation 5.8 → 12.4 ms, one-time).
+* Phase 9 complete: every ROADMAP Phase 9 item done; PROGRESS's broader "Better UI" / "Polish" entries are covered by the title / pause / settings / loading / error screens, audio and texture work.
 
 ## 2026-09-30 — Phase 9 graphics settings
 
@@ -626,11 +634,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (80 files, 1301 tests)
+pnpm test → PASS (81 files, 1321 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9: better textures (refine the procedural 16×16 tile art — clearer ore speckles, grass-side overhang, less noisy stone / dirt, readable planks / wood grain, leaves with holes; original art, same atlas layout / UVs), then verify Phase 9 is complete and start Phase 10 (web deployment).
+After Codex PASS: verify Phase 9 against ROADMAP (all items done), then Phase 10 web deployment — read ROADMAP Phase 10 and plan the first slice (production build config, base path, favicon (known 404), static hosting target decision — ask the user which host before configuring anything external).
