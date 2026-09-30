@@ -185,7 +185,7 @@ Player height: 1.8
 Walk speed: 4.3
 Sprint speed: 6.5
 Crouch speed: 2.2
-Jump velocity: 5
+Jump velocity: 6.5
 Gravity: 18
 
 Interaction distance: 6
@@ -837,3 +837,30 @@ Reviewed files:
 
 Recommendation:
 <continue / fix and review again>
+
+## Context Compaction / Continuation
+
+When the conversation is approaching context limits or before compaction:
+
+1. Update `docs/PROGRESS.md`.
+2. Record:
+   - Current task
+   - Completed work
+   - Current implementation state
+   - Files changed
+   - Tests performed
+   - Test results
+   - Known issues
+   - Important decisions
+   - Exact next step
+3. Never record vague statements such as "continue later".
+4. The `Next Step` must be concrete enough that another Claude session can execute it immediately.
+
+After compaction:
+
+1. Read `docs/PROGRESS.md` before making changes.
+2. Inspect the current code/state.
+3. Continue from `Next Step`.
+4. Do not repeat completed work.
+5. Verify assumptions against the actual code.
+6. Update `docs/PROGRESS.md` after completing each meaningful milestone.
