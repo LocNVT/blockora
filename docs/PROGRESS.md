@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 9: main menu + loading screen.
+Phase 9: audio.
 
 ---
 
@@ -132,10 +132,10 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 
 # Phase 9
 
-* [ ] Main menu
+* [x] Main menu
 * [x] Settings
 * [ ] Audio
-* [ ] Loading screen
+* [x] Loading screen
 * [ ] Better textures
 * [ ] Better UI
 * [ ] Polish
@@ -168,8 +168,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
-* Pause: headless Esc doesn't release pointer lock in automation (the pause reacts to lock loss, verified via `exitPointerLock`); no quit-to-title yet (main menu is next); the pool may retain up to ~1250 free geometries after shrinking from render distance 12.
-* Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving for the session (warning in console) — reset by clearing site data, no new-world UI; new worlds always use `defaultSeed`; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
+* Pause / menu: headless Chrome can't grant pointer lock (tests fake the lock state); the "unavailable storage" title state is unit-tested only; no 3D title background; switching worlds reloads the page (world built once per page load); the pool may retain free geometries after shrinking render distance;
+* Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving until New world → Replace on the title screen; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
 * Geometry pool: ~20 MB more CPU heap (and matching GPU memory) from capacity slack, capacities drift upward (small sections can take large free geometries); each growth replacement or free-list overflow still leaks one VAO on WebGL2 (bounded, tapers off); F3 "Geometries" includes free pooled geometries. One headless 200-block run crashed the page ('Page crashed', not reproduced — likely SwiftShader, possibly the VAO growth).
 * Startup: ~180–210 ms first-frame long task remains (first-use GL driver work; software GPU) plus ~130 ms module-eval task (atlas data-URL generation could be lazy / off-thread); mob / item-drop materials not confirmed precompiled (none on screen at startup).
 * Streaming: new rows appear one chunk later (meshed once ring neighbours load); block-edit remeshes bypass ChunkManager's mesh bookkeeping (harmless in practice — edits are within 6 blocks); worker results arrive in request order; light and meshing stay on the main thread; `ChunkManager.dispose()` / `DebugOverlay.dispose()` not called (no teardown).
@@ -265,6 +265,14 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 main menu + loading screen
+
+* Title screen (`src/ui/MainMenu.ts`) runs after the save load and before any world is built; pure logic in `src/menu/` (`menuModel`, `MenuFlow`, `seed`). Continue only for a loaded save (shows seed + saved time); New world always; Settings always (reuses `SettingsScreen`). Blocked save → message, Continue disabled, New world recovers; storage unavailable → "Saving unavailable in this browser".
+* Seeds: unsigned 32-bit; blank → pre-generated `crypto.getRandomValues` seed (shown); whole numbers wrap mod 2^32; other text → FNV-1a 32-bit. With an existing save (loaded / blocked), New world goes to a confirm view ("This replaces your saved world" → Replace / Cancel); only Replace calls `IndexedDbSaveStore.clear()` (all 4 stores, one transaction) and starts `{ seed, newWorld: true }`.
+* Loading screen (`src/ui/LoadingScreen.ts`): "Generating terrain…" → "Compiling shaders…" → "Starting…", each stage painted before its synchronous work, hidden on the first rendered frame. Pause menu: "Save & quit to title" = `flushAndWait` then `location.reload()` (with saving off: warn, second click quits).
+* Fix found during review: `valueNoise2D` hashes computed `seed * 2147483647`, which exceeds 2^53 for seeds above ~4.19 M (random 32-bit seeds), losing the seed's low bits (≈ 2 000 seeds per hash class). Now `Math.imul(seed, 2147483647)` — identical low 32 bits whenever the old product was exact, so the default seed and every existing test / save are unchanged. Regression tests against an exact BigInt reference (2D + 3D).
+* Verified in real Chrome with a persistent profile: first visit → New world → loading → play → Save & quit → Continue restores edits → Cancel keeps the save → Replace clears it (new seed, old edit gone) → a version-999 record shows the blocked message and New world recovers. Codex review PASS_WITH_NOTES (first round, no findings).
 
 ## 2026-09-30 — Phase 9 pause menu + settings
 
@@ -593,11 +601,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (74 files, 1195 tests)
+pnpm test → PASS (76 files, 1221 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9: main menu (title screen before the world loads: Continue if a save exists, New world with a random seed and a confirm step before replacing the existing save, Settings) + loading screen while the spawn area warms up; pause menu gains "Save & quit to title". Also covers the "no new-world UI" and blocked-save reset gaps in Known Issues.
+Phase 9: audio (Web Audio API, no files — small procedural synthesised sound effects: block break / place, footsteps, hurt, eat, mob sounds; master / effects volume in Settings; ambient day / night / cave tone optional), then error handling (renderer init failure → readable message instead of a blank page).
