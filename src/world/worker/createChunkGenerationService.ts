@@ -25,9 +25,13 @@ function workerPort(worker: Worker): ChunkGenPort {
  * thread's per-frame accept budget), falling back to in-process generation
  * on the main thread when Workers are unavailable or fail to start.
  */
-export function createChunkGenerationService(generator: WorldGenerator): ChunkGenerationService {
+export function createChunkGenerationService(
+  generator: WorldGenerator,
+  onFallback?: (error: unknown) => void,
+): ChunkGenerationService {
   const fallback = (): ChunkGenerationService => new InProcessChunkGenerationService(generator);
   if (typeof Worker === 'undefined') {
+    onFallback?.(new Error('Web Workers are unavailable'));
     return fallback();
   }
   try {
@@ -35,9 +39,10 @@ export function createChunkGenerationService(generator: WorldGenerator): ChunkGe
       type: 'module',
       name: 'chunk-gen',
     });
-    return new WorkerChunkGenerationService(workerPort(worker), generator.seed, fallback);
+    return new WorkerChunkGenerationService(workerPort(worker), generator.seed, fallback, onFallback);
   } catch (error) {
     console.warn('[chunks] generation worker unavailable; generating on the main thread', error);
+    onFallback?.(error);
     return fallback();
   }
 }

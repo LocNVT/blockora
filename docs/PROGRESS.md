@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 9: error handling.
+Phase 9: graphics settings + better textures.
 
 ---
 
@@ -168,6 +168,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Errors: a frame-failure save flush may store a partially updated frame; errors on the title screen count as pre-first-frame (fatal); after a window-event fatal, bootstrap may keep running under the overlay; banners can briefly overlap; the precompile-failure warning stays console-only.
 * Audio: timbres are untuned (never listened to); one shared mob-idle timer; only Pig / Shambler have sounds; voice stealing hard-cuts the oldest voice.
 * Pause / menu: headless Chrome can't grant pointer lock (tests fake the lock state); the "unavailable storage" title state is unit-tested only; no 3D title background; switching worlds reloads the page (world built once per page load); the pool may retain free geometries after shrinking render distance;
 * Persistence: not saved — item drops, mobs, crafting-grid contents, the cursor-held stack while a screen is open; a save this build can't read (read error / invalid / newer version) disables saving until New world → Replace on the title screen; the IndexedDB adapter has no node tests (browser-verified only); the IndexedDB connection stays open with no `versionchange` / close handling, so a future schema upgrade could be blocked by another open tab (Codex minor); placing into a not-yet-loaded neighbour chunk still creates an empty never-generated chunk (pre-existing), and the edit records Air as the original.
@@ -266,6 +267,15 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 9 error handling
+
+* `src/errors/` (pure): `RendererUnavailableError` / `RendererInitError`, `describeError` / `formatReport` (trimmed stack, safe for non-Error / circular / throwing values), `classifyError` (unsupported browser-GPU / graphics couldn't start / couldn't start / stopped unexpectedly / something went wrong), `guardFrame`, `ErrorCoordinator`. `src/ui/ErrorScreen.ts`: plain-DOM fatal screen (headline, explanation, Reload, collapsible copyable details; no renderer / three dependency) and self-hiding non-blocking banners.
+* Rule: fatal for bootstrap / renderer-init rejections, exceptions in the frame callback, and any window error / unhandled rejection before the first frame; after the first frame, window errors / rejections only log + one-time banner. Fatal screen shown once. Frame failure: stop the loop, best-effort save flush (each step guarded), then the screen.
+* One-time banners: IndexedDB unavailable, saved world unreadable, runtime save failure, chunk worker fell back to the main thread, audio unavailable (the normal WebGPU → WebGL2 fallback shows nothing).
+* IndexedDB open timeout raised 3 s → 10 s: a cold first open timed out in 1 of 4 headless runs, which hid an existing save behind "Saving unavailable" for the session (no data loss — nothing is written or cleared without a backend).
+* Verified in real Chrome: GPU / WebGL disabled → "Your browser or GPU doesn't support WebGL2 or WebGPU"; normal run → no screen / banner; injected frame failure → one fatal screen, loop stopped, report copyable; `indexedDB.open` throwing → game runs with one "Saving unavailable" banner.
+* Codex review PASS_WITH_NOTES (first round). Both minor notes fixed: the frame-failure text no longer claims the world was saved ("Progress since the last autosave may be lost", regression test), and a successful save now clears the save-failure flag so a later frame failure flushes again.
 
 ## 2026-09-30 — Phase 9 procedural audio
 
@@ -610,11 +620,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (78 files, 1261 tests)
+pnpm test → PASS (79 files, 1283 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 9: error handling — renderer / WebGPU+WebGL2 init failure, worker failure, IndexedDB errors and uncaught exceptions show a readable in-page message (with a copyable error detail) instead of a blank page or silent console errors; then graphics settings (e.g. fog on / off, shadows N/A) and better textures.
+Phase 9 remaining: graphics settings (fog toggle / distance, max FPS or "reduce motion" style options that actually exist in the renderer — no fake toggles) and better textures (refine the procedural tile art: clearer ore speckles, grass side overhang, less noisy stone; keep 16×16 atlas, original art). Then check Phase 9 is complete and move to Phase 10 (web deployment).

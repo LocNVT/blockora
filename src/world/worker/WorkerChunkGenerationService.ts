@@ -29,6 +29,7 @@ export class WorkerChunkGenerationService implements ChunkGenerationService {
     private readonly port: ChunkGenPort,
     seed: number,
     private readonly createFallback: () => ChunkGenerationService,
+    private readonly onFallback?: (error: unknown) => void,
   ) {
     port.listen(
       (response) => this.onResponse(response),
@@ -108,6 +109,7 @@ export class WorkerChunkGenerationService implements ChunkGenerationService {
     this.port.terminate();
     const fallback = this.createFallback();
     this.fallback = fallback;
+    this.onFallback?.(error);
     for (const [id, { cx, cz }] of this.outstanding) {
       fallback.request(id, cx, cz);
     }
