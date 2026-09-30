@@ -270,10 +270,10 @@ on a reasonable desktop.
 
 # Phase 10 — Web Deployment
 
-* [ ] Production build
+* [x] Production build
 * [ ] Static hosting
-* [ ] Asset compression
-* [ ] Cache strategy
+* [x] Asset compression
+* [x] Cache strategy
 * [ ] Error monitoring
 * [ ] Performance monitoring
 * [ ] Mobile compatibility investigation

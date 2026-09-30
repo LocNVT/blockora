@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 10: production build + Cloudflare Pages config (local only).
+Phase 10: monitoring + mobile decisions (need the user), then the owner's first deploy.
 
 ---
 
@@ -154,7 +154,6 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Transparent faces within a chunk are not depth-sorted (fine for now; revisit with water/glass-heavy scenes).
 * Atlas UV mapping assumes unit quads; greedy meshing will need shader-side `fract()` on local UV + per-vertex tile (both kept in `ChunkMeshData`) or a texture array.
 * Headless Chrome CLI (`--virtual-time-budget`) runs only a few rAF frames; for interactive checks drive real Chrome with `playwright-core` installed in a scratch dir (not a project dependency).
-* Browser requests `/favicon.ico` → 404 console error (no favicon yet).
 * No swimming: players sink in water; camera inside water sees no water surface/fog (back faces not rendered). Breaking a block underwater leaves an air pocket (no fluid simulation).
 * `giveStartingItems` still grants a test kit; temporary until survival/crafting give a real progression.
 * `src/ui/HotbarHud.ts` imports atlas pixels from `src/renderer/chunkMeshes.ts` (UI → renderer dependency); move shared atlas data to a neutral module if it grows.
@@ -168,6 +167,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
 * Textures: ore art verified by atlas sheet + tests only (no cave-wall screenshot); ore cluster count can be below the target on some seeds (min 10 ore pixels enforced); stone cracks could read slightly like ore at a distance; atlas generation ~6.6 ms slower on the cold first call.
 * Graphics: fog-off through a real day/night change and the 60 FPS cap are unit-tested only (headless is paused / below 60 FPS); fog off shows chunk streaming edges; a capped first frame may wait one interval; the limiter's 2 ms jitter tolerance lets a display refresh just above the cap (e.g. 62 Hz vs cap 60) render every callback (~3 % over; Codex minor, kept for vsync jitter at common rates).
 * Errors: a frame-failure save flush may store a partially updated frame; errors on the title screen count as pre-first-frame (fatal); after a window-event fatal, bootstrap may keep running under the overlay; banners can briefly overlap; the precompile-failure warning stays console-only.
@@ -275,6 +275,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 10 production build + Cloudflare Pages config (local only)
+
+* `vite.config.ts`: three.js split into its own `vendor-three` chunk via Rolldown `codeSplitting.groups` (Vite 8.3 uses Rolldown), so game-code deploys don't invalidate its cache; `chunkSizeWarningLimit` 1000 (three alone is 895 kB); worker chunk unchanged and three-free. Game chunk 1142 → 247 kB raw (318 → 77 kB gzip).
+* `public/favicon.svg` (original isometric block) + favicon link and theme-color in `index.html` — fixes the long-standing favicon 404.
+* `public/_headers`: `/assets/*` immutable for a year, `/` + `/index.html` no-cache, favicon one day, nosniff, referrer policy, CSP (`script-src 'self'`, no `unsafe-eval`; `style-src 'unsafe-inline'` required by injected UI styles). `tests/deployConfig.test.ts` pins the rules. `docs/DEPLOYMENT.md`: setup + verification checklist for the owner.
+* Verified locally with a static server that applies `_headers`: headers correct, no CSP violations, no 404s, worker generation active, title → new world → play, save round-trip. No network / deploy actions taken. Codex review PASS_WITH_NOTES (first round; note: verify the overlapping `/*` + `/assets/*` header rules on Cloudflare after the first deploy — covered by the `curl -I` checks in `docs/DEPLOYMENT.md`).
 
 ## 2026-09-30 — Phase 9 better textures
 
@@ -640,11 +647,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (81 files, 1321 tests)
+pnpm test → PASS (82 files, 1326 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 10 slice 1 (local only): production build hardening (split three.js into its own long-cached chunk, report gzip / brotli sizes), `public/_headers` for Cloudflare Pages cache rules, an original favicon (fixes the known 404), and a deploy checklist; no account or deploy actions without the user's go-ahead.
+Phase 10 remaining: error / performance monitoring (decide with the user: none, a self-hosted endpoint, or a service — nothing external without approval), mobile compatibility investigation (touch controls? pointer lock absent on mobile → at least a clear "desktop only" message), then the first real deploy by the owner and header verification.
