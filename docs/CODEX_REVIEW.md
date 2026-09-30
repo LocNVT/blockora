@@ -1,14 +1,14 @@
 # Codex Review
 
-_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only; bold labels normalised). Validation: 1342 tests, lint and build pass._
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1359 tests, lint and build pass._
 
-Status: PASS_WITH_NOTES
+Status: PASS
 
-Task:
-Phase 10 mobile compatibility investigation + graceful handling
+Task:  
+Phase 8 follow-up: chunk cache
 
-Summary:
-The mobile capability gate, Try anyway path, safe pointer lock wrapper, and narrow screen layouts have focused unit coverage. I found no concrete blocking issue.
+Summary:  
+The bounded per-manager cache transfers chunk block arrays safely, preserves edits, recomputes derived light on reload, and respects streaming budgets. No blocking issue found.
 
 Critical:
 - None
@@ -17,21 +17,33 @@ Important:
 - None
 
 Minor:
-- If pointer lock exists but throws synchronously, `requestGameLock` ignores the wrapper's `failed` result. The pause menu appears after its grace window, without an immediate explanation.
+- None
 
 Required fixes:
 - None
 
 Tests:
-- The added tests cover capability classification, menu gating, pointer lock failure cases, and paused state. `git diff --check` found no whitespace errors. I did not run tests or a build.
+- Focused tests cover cache behavior and integration with `ChunkManager`. Not run during this review. `docs/PROGRESS.md` reports 1,359 tests passing.
 
 Architecture:
-- Capability detection is isolated and injectable; menu policy and rendering remain separate. No CLAUDE.md compliance concern found.
+- The cache is isolated from persistence and live chunks. No CLAUDE.md compliance issue found.
 
 Performance:
-- No material performance or resource lifecycle risk found.
+- Capacity is bounded; cache hits avoid generation requests. No material performance or resource lifecycle risk found.
 
-Follow-up (Claude): the minor note was fixed before commit — a `failed` lock request now shows an immediate pause-menu message (browser-verified).
+Reviewed files:
+- `CLAUDE.md`
+- `docs/ROADMAP.md`
+- `docs/PROGRESS.md`
+- `src/config/constants.ts`
+- `src/debug/debugText.ts`
+- `src/world/ChunkCache.ts`
+- `src/world/ChunkManager.ts`
+- `src/world/BlockEditStore.ts`
+- `tests/ChunkCache.test.ts`
+- `tests/ChunkManagerCache.test.ts`
+- `tests/ChunkManagerBudget.test.ts`
+- `tests/debugText.test.ts`
 
-Recommendation:
+Recommendation:  
 Continue

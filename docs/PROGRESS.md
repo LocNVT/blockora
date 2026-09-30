@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 10: waiting on the owner's first Cloudflare Pages deploy (see `docs/DEPLOYMENT.md`).
+None in progress — waiting on the owner (first deploy, real-hardware F3 numbers) or a new direction.
 
 ---
 
@@ -282,6 +282,12 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 8 follow-up: chunk cache
+
+* `src/world/ChunkCache.ts`: LRU (Map insertion order) of unloaded chunks' block arrays by ownership transfer (never aliased with a live chunk), `CHUNK_STREAMING_CONFIG.chunkCacheSize` 256 × 32 768 B = 8 MiB; memory-only, per ChunkManager (a new world gets a new cache), never persisted.
+* ChunkManager: unload (and `setRadius` shrink) → cache, farthest from the new centre first; wanted cached chunks are set aside before unloading so they can't be evicted by the same recompute. Cache hits are accepted nearest-first through the normal accept path (count cap + time budget, no worker request); light is always recomputed (never cached); the BlockEditStore diff is NOT re-applied to cached chunks — they already contain the edits, and re-applying would record the edited block as the "generated" original and drop the edit. Evicted chunks regenerate and get the diff as before. F3: `cache n/256 hit x%`.
+* Measured (headless, 3 away-and-back trips): worker generation requests per return leg 57 → 0 (3 chunks away) and 228 → 0 (12.5 chunks away); return area meshed ~6–10 % sooner; terrain identical (block hash over 361 chunks, same draw calls / triangles); a placed block survives all trips. Codex review PASS (first round, no findings).
 
 ## 2026-09-30 — Phase 10 mobile compatibility investigation + graceful handling
 
@@ -663,11 +669,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (83 files, 1342 tests)
+pnpm test → PASS (85 files, 1359 tests)
 ```
 
 ---
 
 # Next Task
 
-Owner: create the Cloudflare Pages project and run the first deploy (see `docs/DEPLOYMENT.md`), then verify headers with `curl -I`. After that: Phase 11 (optional multiplayer) only if the user wants it; otherwise candidates are touch controls, greedy meshing with real-GPU numbers, more mobs (cow / chicken), and the remaining Known Issues.
+Owner: first Cloudflare Pages deploy (`docs/DEPLOYMENT.md`) and real-hardware F3 numbers (decides greedy meshing / occlusion culling). Otherwise, user's choice: Phase 11 (optional multiplayer), touch controls, more mobs (cow / chicken), or the remaining Known Issues.

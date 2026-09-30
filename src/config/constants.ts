@@ -553,6 +553,12 @@ export const CHUNK_STREAMING_CONFIG = {
   frameBudgetMs: 6,
   /** Chunk rings generated + lit beyond renderDistance but never meshed (avoids remeshing the edge row while walking). */
   outerRing: 1,
+  /**
+   * Unloaded chunks whose block arrays are kept for reuse (LRU; memory-only).
+   * 256 chunks * 32,768 B (Uint8, 16x16x128) = 8 MiB, about 13 rows of the
+   * default loaded area.
+   */
+  chunkCacheSize: 256,
 } as const;
 
 /** Renderable sections per chunk mesh (opaque + transparent), each its own geometry. */

@@ -224,13 +224,13 @@ Close browser → reopen → world state remains.
 
 * [x] Web Worker generation
 * [x] Transferable buffers
-* [ ] Greedy meshing
+* [ ] Greedy meshing — deferred until real-GPU numbers (F3) show the GPU is the bottleneck (user decision 2026-09-30)
 * [x] Chunk prioritization
-* [ ] Chunk cache
+* [x] Chunk cache
 * [x] Mesh disposal
 * [x] Object pooling
 * [x] Frustum culling
-* [ ] Chunk culling
+* [ ] Chunk culling (occlusion; frustum culling is done) — deferred until real-GPU numbers (user decision 2026-09-30)
 
 ### Target
 

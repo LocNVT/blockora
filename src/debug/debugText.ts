@@ -55,6 +55,8 @@ export interface DebugSnapshot {
     readonly inFlight: number;
     readonly generation: 'worker' | 'main';
     readonly meshed?: number;
+    /** Unloaded-chunk block cache (optional): entries, capacity, loads served from it vs generated. */
+    readonly cache?: { readonly size: number; readonly capacity: number; readonly hits: number; readonly misses: number };
   };
   readonly mobCount: number;
   readonly position: { readonly x: number; readonly y: number; readonly z: number };
@@ -91,6 +93,12 @@ function backendLabel(backend: string): string {
   return backend;
 }
 
+/** Cache hit rate as a whole percent, or n/a before the first load. */
+function hitRate({ hits, misses }: { readonly hits: number; readonly misses: number }): string {
+  const total = hits + misses;
+  return total === 0 ? NA : `${Math.round((hits / total) * 100)}%`;
+}
+
 /** Pure formatter: the overlay's lines, top to bottom. */
 export function formatDebugLines(s: DebugSnapshot): string[] {
   const p = s.perf;
@@ -122,7 +130,8 @@ export function formatDebugLines(s: DebugSnapshot): string[] {
       9,
       0,
       `Chunk queue  pending ${formatInt(q.pending)}  in-flight ${formatInt(q.inFlight)}  gen on ${q.generation}` +
-        (q.meshed !== undefined ? `  meshed ${formatInt(q.meshed)}` : ''),
+        (q.meshed !== undefined ? `  meshed ${formatInt(q.meshed)}` : '') +
+        (q.cache !== undefined ? `  cache ${formatInt(q.cache.size)}/${formatInt(q.cache.capacity)} hit ${hitRate(q.cache)}` : ''),
     );
   }
   return lines;

@@ -81,6 +81,14 @@ describe('formatDebugLines', () => {
     expect(lines[9]).toBe('Chunk queue  pending 1,234  in-flight 8  gen on worker');
     expect(lines).toHaveLength(13);
   });
+
+  it('appends chunk cache stats to the queue line (n/a hit rate before any load)', () => {
+    const base = { pending: 0, inFlight: 0, generation: 'worker' as const, meshed: 5 };
+    const used = formatDebugLines(snapshot({ chunkStreaming: { ...base, cache: { size: 120, capacity: 256, hits: 83, misses: 17 } } }));
+    expect(used[9]).toBe('Chunk queue  pending 0  in-flight 0  gen on worker  meshed 5  cache 120/256 hit 83%');
+    const fresh = formatDebugLines(snapshot({ chunkStreaming: { ...base, cache: { size: 0, capacity: 256, hits: 0, misses: 0 } } }));
+    expect(fresh[9]).toContain('cache 0/256 hit n/a');
+  });
 });
 
 describe('readers', () => {

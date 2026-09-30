@@ -5,6 +5,7 @@ import type { ChunkMeshSink } from './mesher/remesh';
 import { remeshChunks } from './mesher/remesh';
 import { MeshBuffers } from './mesher/MeshBuffers';
 import { Chunk } from './Chunk';
+import { ChunkCache } from './ChunkCache';
 import { chunkKey, type ChunkCoord } from './chunkCoords';
 import { LightEngine } from './light/LightEngine';
 import type { BlockEditStore } from './BlockEditStore';
@@ -34,6 +35,8 @@ export interface ChunkStreamingStats {
   readonly generation: GenerationLocation;
   /** Chunks currently meshed (visible) by this manager; <= loaded chunks (the outer ring is loaded, not meshed). */
   readonly meshed: number;
+  /** Unloaded-chunk block cache: entries, capacity, and loads served from it vs generated. */
+  readonly cache: { readonly size: number; readonly capacity: number; readonly hits: number; readonly misses: number };
 }
 
 export interface ChunkStreamingOptions {
@@ -54,6 +57,8 @@ export interface ChunkStreamingOptions {
    * game passes CHUNK_STREAMING_CONFIG.outerRing.
    */
   readonly outerRing?: number;
+  /** Unloaded chunks kept in the LRU block cache (0 disables). Default: CHUNK_STREAMING_CONFIG.chunkCacheSize. */
+  readonly chunkCacheSize?: number;
 }
 
 interface InFlightRequest {
@@ -147,6 +152,14 @@ const DIAGONALS: readonly (readonly [number, number])[] = [
  * the start of `update` is spent, but always doing >= 1 accept and >= 1 mesh
  * when available. Unmeshed candidates carry over to the next `update`.
  *
+ * Chunk cache: chunks that unload (moving or `setRadius` shrink) hand their
+ * block array to a bounded LRU `ChunkCache` (memory-only, blocks only). When a
+ * cached chunk becomes desired again it is accepted like a generated result
+ * (same per-update cap and time budget) but without a worker request; its
+ * edits are already in the blocks, so the BlockEditStore diff is not
+ * re-applied, and light is always recomputed. Evicted chunks regenerate
+ * normally (with the diff).
+ *
  * `warmUp` / `loadAllPending` generate synchronously on the calling thread
  * (spawn / respawn / tests) with `generator`.
  */
@@ -168,6 +181,10 @@ export class ChunkManager {
   private readonly probe: PerfProbe | undefined;
   private readonly service: ChunkGenerationService;
 
+  private readonly cache: ChunkCache;
+  private cacheHits = 0;
+  private cacheMisses = 0;
+
   private chunksLoaded = 0;
   private generationMs = 0;
   private lightMs = 0;
@@ -179,6 +196,8 @@ export class ChunkManager {
   private renderKeys: ReadonlySet<string> = new Set();
   /** Desired, not loaded, not yet requested; nearest-first. */
   private pendingLoads: ChunkCoord[] = [];
+  /** Desired, not loaded, present in the cache; nearest-first. Accepted like generated results, without a request. */
+  private cachedLoads: ChunkCoord[] = [];
   private readonly inFlight = new Map<string, InFlightRequest>();
   private nextRequestId = 1;
   /** Chunks meshed by this manager and still current -> axis-neighbour presence mask at that mesh. */
@@ -211,6 +230,7 @@ export class ChunkManager {
     this.light = light;
     this.edits = edits;
     this.probe = probe;
+    this.cache = new ChunkCache(streaming.chunkCacheSize ?? CHUNK_STREAMING_CONFIG.chunkCacheSize);
     this.service = streaming.service ?? new InProcessChunkGenerationService(generator, () => this.now());
   }
 
@@ -224,7 +244,13 @@ export class ChunkManager {
   }
 
   get streaming(): ChunkStreamingStats {
-    return { pending: this.pendingLoads.length, inFlight: this.inFlight.size, generation: this.service.location, meshed: this.meshedWith.size };
+    return {
+      pending: this.pendingLoads.length + this.cachedLoads.length,
+      inFlight: this.inFlight.size,
+      generation: this.service.location,
+      meshed: this.meshedWith.size,
+      cache: { size: this.cache.size, capacity: this.cache.capacity, hits: this.cacheHits, misses: this.cacheMisses },
+    };
   }
 
   /**
@@ -271,6 +297,7 @@ export class ChunkManager {
       this.loadNow(coord);
     }
     this.pendingLoads = [];
+    this.cachedLoads = [];
     this.flushMeshes(Number.POSITIVE_INFINITY);
   }
 
@@ -307,6 +334,8 @@ export class ChunkManager {
     }
     this.inFlight.clear();
     this.pendingLoads = [];
+    this.cachedLoads = [];
+    this.cache.clear();
     this.service.dispose();
   }
 
@@ -327,11 +356,27 @@ export class ChunkManager {
     this.renderKeys = new Set(
       chunksWithinRadius(center, this.radius).map(({ cx, cz }) => chunkKey(cx, cz)),
     );
+    // Cached chunks that are wanted again are set aside while this unload fills
+    // the cache, so the new entries cannot evict them; then they go back as the
+    // most recent entries (farthest first, so the nearest stay newest).
+    const wanted: { readonly coord: ChunkCoord; readonly blocks: Uint8Array }[] = [];
+    for (let i = desired.length - 1; i >= 0; i -= 1) {
+      const coord = desired[i] as ChunkCoord;
+      const blocks = this.store.hasChunk(coord.cx, coord.cz) ? undefined : this.cache.take(coord.cx, coord.cz);
+      if (blocks !== undefined) {
+        wanted.push({ coord, blocks });
+      }
+    }
     this.unloadOutOfRange();
+    for (const { coord, blocks } of wanted) {
+      this.cache.put(coord.cx, coord.cz, blocks);
+    }
     this.cancelUndesiredRequests();
-    this.pendingLoads = desired.filter(
+    const missing = desired.filter(
       ({ cx, cz }) => !this.store.hasChunk(cx, cz) && !this.inFlight.has(chunkKey(cx, cz)),
     );
+    this.cachedLoads = missing.filter(({ cx, cz }) => this.cache.has(cx, cz));
+    this.pendingLoads = missing.filter(({ cx, cz }) => !this.cache.has(cx, cz));
 
     // Chunks that left the rendered radius but stay loaded (the outer ring):
     // drop their mesh; they are simply not rendered any more.
@@ -371,10 +416,18 @@ export class ChunkManager {
       }
     }
 
+    // Farthest from the new center first, so when a big unload (teleport,
+    // radius shrink) overflows the cache it is the far chunks that get evicted.
+    toUnload.sort((a, b) => this.distanceToCenter(b) - this.distanceToCenter(a));
     for (const { cx, cz } of toUnload) {
       const key = chunkKey(cx, cz);
       this.sink.remove(cx, cz);
+      // Blocks (player edits included) move to the cache; the Chunk object is dropped, so nothing aliases them.
+      const chunk = this.store.getChunk(cx, cz);
       this.store.removeChunk(cx, cz);
+      if (chunk !== undefined) {
+        this.cache.put(cx, cz, chunk.blocks);
+      }
       this.meshedWith.delete(key);
       this.meshCandidates.delete(key);
       this.lightChanged.delete(key);
@@ -414,12 +467,21 @@ export class ChunkManager {
    * `deadline` has passed -- but only after at least one chunk was inserted.
    */
   private acceptGenerated(deadline: number): void {
-    if (this.inFlight.size === 0 || this.maxLoadsPerUpdate <= 0) {
+    if (this.maxLoadsPerUpdate <= 0) {
       return;
     }
     let inserted = 0;
     for (let handled = 0; handled < this.maxLoadsPerUpdate; handled += 1) {
       if (inserted > 0 && this.now() >= deadline) {
+        return;
+      }
+      if (this.cachedLoads.length > 0) {
+        if (this.acceptCached()) {
+          inserted += 1;
+        }
+        continue;
+      }
+      if (this.inFlight.size === 0) {
         return;
       }
       const result = this.service.poll(1)[0];
@@ -435,9 +497,29 @@ export class ChunkManager {
       if (this.store.hasChunk(result.cx, result.cz)) {
         continue; // already present (e.g. created by a block edit): never double-insert
       }
-      this.insertChunk(new Chunk(result.cx, result.cz, result.blocks), result.genMs);
+      this.insertChunk(new Chunk(result.cx, result.cz, result.blocks), result.genMs, false);
       inserted += 1;
     }
+  }
+
+  /**
+   * Loads the nearest cached chunk (no worker request). Returns whether a
+   * chunk was inserted; an entry evicted since it was queued falls back to a
+   * normal request.
+   */
+  private acceptCached(): boolean {
+    const coord = this.cachedLoads.shift() as ChunkCoord;
+    if (this.store.hasChunk(coord.cx, coord.cz)) {
+      return false;
+    }
+    const blocks = this.cache.take(coord.cx, coord.cz);
+    if (blocks === undefined) {
+      this.pendingLoads.unshift(coord);
+      return false;
+    }
+    this.cacheHits += 1;
+    this.insertChunk(new Chunk(coord.cx, coord.cz, blocks), 0, true);
+    return true;
   }
 
   /** Generates `coord` on the calling thread unless already loaded, superseding any in-flight request. */
@@ -451,21 +533,41 @@ export class ChunkManager {
       this.service.cancel(request.id);
       this.inFlight.delete(key);
     }
+    const cached = this.cache.take(coord.cx, coord.cz);
+    if (cached !== undefined) {
+      this.cacheHits += 1;
+      this.insertChunk(new Chunk(coord.cx, coord.cz, cached), 0, true);
+      return;
+    }
     const generated = generateChunkMessage(this.generator, 0, coord.cx, coord.cz, () => this.now());
-    this.insertChunk(new Chunk(coord.cx, coord.cz, generated.blocks), generated.genMs);
+    this.insertChunk(new Chunk(coord.cx, coord.cz, generated.blocks), generated.genMs, false);
   }
 
-  /** Edits -> store -> light, then queues the chunk, its loaded neighbours and light-changed chunks for meshing. */
-  private insertChunk(chunk: Chunk, genMs: number): void {
+  /**
+   * Edits -> store -> light, then queues the chunk, its loaded neighbours and light-changed chunks for meshing.
+   *
+   * A chunk `fromCache` already contains the player's edits (they were applied
+   * to the live chunk before it unloaded), so the BlockEditStore diff is NOT
+   * applied again: `applyTo` records the block it finds as the "generated"
+   * original, which for a cached chunk is the edited value, and would drop
+   * every edit from the store. Light is always recomputed (neighbour light may
+   * have changed while the chunk was away; light is never cached).
+   */
+  private insertChunk(chunk: Chunk, genMs: number, fromCache: boolean): void {
     const coord: ChunkCoord = { cx: chunk.cx, cz: chunk.cz };
-    this.edits?.applyTo(chunk);
+    if (!fromCache) {
+      this.cacheMisses += 1;
+      this.edits?.applyTo(chunk);
+    }
     this.store.setChunk(chunk);
     const lightStart = this.now();
     const lightChanged = this.light.lightChunk(coord.cx, coord.cz);
     const lightEnd = this.now();
     this.generationMs += genMs;
     this.lightMs += lightEnd - lightStart;
-    this.probe?.recordChunkGeneration(genMs);
+    if (!fromCache) {
+      this.probe?.recordChunkGeneration(genMs);
+    }
     this.probe?.recordLight(lightEnd - lightStart);
     this.chunksLoaded += 1;
 
