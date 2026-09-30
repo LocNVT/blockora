@@ -224,13 +224,13 @@ Close browser → reopen → world state remains.
 
 * [x] Web Worker generation
 * [x] Transferable buffers
-* [ ] Greedy meshing — deferred until real-GPU numbers (F3) show the GPU is the bottleneck (user decision 2026-09-30)
+* [ ] Greedy meshing — not needed: real-hardware F3 shows 60 FPS at render distance 12 (545k triangles); revisit on lower-end hardware
 * [x] Chunk prioritization
 * [x] Chunk cache
 * [x] Mesh disposal
 * [x] Object pooling
 * [x] Frustum culling
-* [ ] Chunk culling (occlusion; frustum culling is done) — deferred until real-GPU numbers (user decision 2026-09-30)
+* [ ] Chunk culling (occlusion; frustum culling is done) — not needed: same measurement (493 draw calls, GPU not the bottleneck)
 
 ### Target
 

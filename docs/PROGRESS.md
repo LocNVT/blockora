@@ -221,7 +221,9 @@ Reason:
 
 The measured main-thread bottlenecks are fixed (worker generation, streaming budget, leaks); headless runs use a software GPU, so they can't justify a large rendering change (greedy meshing needs a texture-array / tiling approach for merged faces).
 
-First real-hardware numbers (owner, 2026-09-30, WebGPU, 1555×739 at ratio 1.0, render distance 8, standing): 59.9 FPS (vsync-locked), frame ms avg 16.7 / p95 16.9 / max 17.2, 140 draw calls, 208 945 triangles, 361 chunks loaded / 289 meshed, gen 4.70 ms (worker) / light 0.61 / mesh 1.94 ms per chunk, JS heap 129 MB. Target met with no stutter → greedy meshing / occlusion culling stay deferred. Pending stress check: fullscreen, render distance 12, sprinting.
+First real-hardware numbers (owner, 2026-09-30, WebGPU, 1555×739 at ratio 1.0, render distance 8, standing): 59.9 FPS (vsync-locked), frame ms avg 16.7 / p95 16.9 / max 17.2, 140 draw calls, 208 945 triangles, 361 chunks loaded / 289 meshed, gen 4.70 ms (worker) / light 0.61 / mesh 1.94 ms per chunk, JS heap 129 MB. Target met with no stutter → greedy meshing / occlusion culling stay deferred.
+
+Stress check (owner, same machine, WebGPU, 1555×739, render distance 12, standing): 59.8 FPS (vsync-locked), frame ms avg 16.7 / p95 17.0 / max 20.5, 493 draw calls, 545 419 triangles, 729 chunks loaded / 625 meshed, JS heap 214 MB. 2.6× the triangles and 3.5× the draw calls with no frame-time change → the GPU is not the bottleneck on this hardware; greedy meshing / occlusion culling are not needed now. Revisit only if lower-end hardware or a mid-sprint F3 capture shows GPU-bound frames.
 
 ## 2026-09-29
 
