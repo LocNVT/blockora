@@ -21,7 +21,7 @@ export const PLAYER_CONFIG = {
   walkSpeed: 4.3,
   sprintSpeed: 6.5,
   crouchSpeed: 2.2,
-  jumpVelocity: 5,
+  jumpVelocity: 6.5,
   gravity: 18,
   /** Largest downward speed gravity can accelerate the player to (m/s), terminal velocity. */
   maxFallSpeed: 40,

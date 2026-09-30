@@ -119,6 +119,22 @@ describe('stepPlayer', () => {
     expect(groundedState.velocity.y).toBeGreaterThan(0);
   });
 
+  // Regression: jumpVelocity=5/gravity=18 gave an apex of ~0.69 blocks, too low
+  // to clear a 1-unit step — the player would bonk into it and never climb.
+  it('jump apex clears a 1-unit step', () => {
+    const state = createPlayerState({ x: 0, y: GROUND_Y, z: 0 });
+    state.onGround = true;
+    stepPlayer(state, baseInput({ jump: true }), 1 / 60, flatGround);
+
+    let apexY = state.position.y;
+    for (let i = 0; i < 200; i += 1) {
+      stepPlayer(state, baseInput(), 1 / 60, flatGround);
+      apexY = Math.max(apexY, state.position.y);
+    }
+
+    expect(apexY - GROUND_Y).toBeGreaterThan(1);
+  });
+
   it('clamps dt to avoid tunneling after large frame gaps', () => {
     const clampedState = createPlayerState({ x: 0, y: GROUND_Y, z: 0 });
     clampedState.onGround = true;
