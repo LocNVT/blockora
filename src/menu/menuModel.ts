@@ -1,4 +1,5 @@
 import type { LoadSaveResult } from '../save/gameSave';
+import { NEEDS_KEYBOARD_MOUSE_NOTICE, isPlayBlocked, type PlatformVerdict } from '../platform/capabilities';
 
 /** What the title screen knows about storage: the load outcome, or that IndexedDB could not be opened. */
 export type StorageStatus = 'loaded' | 'empty' | 'blocked' | 'unavailable';
@@ -9,8 +10,10 @@ export function storageStatusOf(storeOpened: boolean, load: LoadSaveResult): Sto
 
 export interface MainMenuModel {
   readonly continueEnabled: boolean;
-  /** New world is always offered; it is the recovery path for a blocked save. */
-  readonly newWorldEnabled: true;
+  /** New world is offered unless the device cannot play (then "Try anyway" re-enables it). */
+  readonly newWorldEnabled: boolean;
+  /** The device lacks pointer lock / a fine pointer: buttons start disabled, "Try anyway" is shown. */
+  readonly playBlocked: boolean;
   /** A stored world exists (readable or not), so New world must be confirmed before it is cleared. */
   readonly newWorldNeedsConfirm: boolean;
   /** Whether the world started from this menu will be saved. */
@@ -24,16 +27,36 @@ export const BLOCKED_NOTICE =
   'Starting a new world replaces it.';
 export const UNAVAILABLE_NOTICE = 'Saving unavailable in this browser';
 
-export function mainMenuModel(status: StorageStatus): MainMenuModel {
+export function mainMenuModel(status: StorageStatus, platform: PlatformVerdict = 'playable'): MainMenuModel {
+  const base = storageModel(status);
+  if (!isPlayBlocked(platform)) {
+    return base;
+  }
+  return {
+    ...base,
+    continueEnabled: false,
+    newWorldEnabled: false,
+    playBlocked: true,
+    notice: base.notice === null ? NEEDS_KEYBOARD_MOUSE_NOTICE : `${NEEDS_KEYBOARD_MOUSE_NOTICE} ${base.notice}`,
+  };
+}
+
+/** Re-enables the buttons after "Try anyway" (storage rules unchanged). */
+export function tryAnywayModel(status: StorageStatus): MainMenuModel {
+  return storageModel(status);
+}
+
+function storageModel(status: StorageStatus): MainMenuModel {
   switch (status) {
     case 'loaded':
-      return { continueEnabled: true, newWorldEnabled: true, newWorldNeedsConfirm: true, savingAvailable: true, notice: null };
+      return { continueEnabled: true, newWorldEnabled: true, playBlocked: false, newWorldNeedsConfirm: true, savingAvailable: true, notice: null };
     case 'empty':
-      return { continueEnabled: false, newWorldEnabled: true, newWorldNeedsConfirm: false, savingAvailable: true, notice: null };
+      return { continueEnabled: false, newWorldEnabled: true, playBlocked: false, newWorldNeedsConfirm: false, savingAvailable: true, notice: null };
     case 'blocked':
       return {
         continueEnabled: false,
         newWorldEnabled: true,
+        playBlocked: false,
         newWorldNeedsConfirm: true,
         savingAvailable: true,
         notice: BLOCKED_NOTICE,
@@ -42,6 +65,7 @@ export function mainMenuModel(status: StorageStatus): MainMenuModel {
       return {
         continueEnabled: false,
         newWorldEnabled: true,
+        playBlocked: false,
         newWorldNeedsConfirm: false,
         savingAvailable: false,
         notice: UNAVAILABLE_NOTICE,

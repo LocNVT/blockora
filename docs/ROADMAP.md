@@ -274,9 +274,9 @@ on a reasonable desktop.
 * [ ] Static hosting
 * [x] Asset compression
 * [x] Cache strategy
-* [ ] Error monitoring
-* [ ] Performance monitoring
-* [ ] Mobile compatibility investigation
+* [x] Error monitoring (local only: in-page error screen, user decision 2026-09-30)
+* [x] Performance monitoring (local only: F3 overlay, user decision 2026-09-30)
+* [x] Mobile compatibility investigation
 
 Potential platforms:
 

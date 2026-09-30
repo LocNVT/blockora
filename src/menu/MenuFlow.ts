@@ -1,5 +1,6 @@
 import { parseSeedInput, randomSeed, type RandomUint32 } from './seed';
-import { mainMenuModel, type MainMenuModel, type StorageStatus } from './menuModel';
+import { mainMenuModel, tryAnywayModel, type MainMenuModel, type StorageStatus } from './menuModel';
+import type { PlatformVerdict } from '../platform/capabilities';
 
 /** What the world is built from, chosen by the menu. */
 export interface WorldStartParams {
@@ -23,6 +24,8 @@ export interface MenuFlowDeps {
   /** Deletes the stored world; only called after the user confirmed the replacement. */
   readonly clearSave: () => Promise<void>;
   readonly random: RandomUint32;
+  /** Device capability verdict; defaults to 'playable'. */
+  readonly platform?: PlatformVerdict;
 }
 
 /**
@@ -31,15 +34,24 @@ export interface MenuFlowDeps {
  * explicit `confirmReplace()`, and cancelling keeps it untouched).
  */
 export class MenuFlow {
-  readonly model: MainMenuModel;
+  private currentModel: MainMenuModel;
   /** Random seed offered for a new world; used when the seed field is blank. */
   readonly suggestedSeed: number;
   private currentState: MenuFlowState = 'main';
   private pendingSeed = 0;
 
   constructor(private readonly deps: MenuFlowDeps) {
-    this.model = mainMenuModel(deps.status);
+    this.currentModel = mainMenuModel(deps.status, deps.platform ?? 'playable');
     this.suggestedSeed = randomSeed(deps.random);
+  }
+
+  get model(): MainMenuModel {
+    return this.currentModel;
+  }
+
+  /** "Try anyway": lifts the device gate (e.g. a tablet with a keyboard); storage rules stay. */
+  tryAnyway(): void {
+    this.currentModel = tryAnywayModel(this.deps.status);
   }
 
   /** Seed the world will use once the replacement is confirmed. */
@@ -61,7 +73,7 @@ export class MenuFlow {
 
   /** New world from the seed field; asks for confirmation first when a save exists. */
   newWorld(seedText: string): MenuFlowResult {
-    if (this.currentState !== 'main') {
+    if (this.currentState !== 'main' || !this.model.newWorldEnabled) {
       return { kind: 'pending' };
     }
     const seed = parseSeedInput(seedText, () => this.suggestedSeed);

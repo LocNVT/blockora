@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Phase 10: monitoring + mobile decisions (need the user), then the owner's first deploy.
+Phase 10: waiting on the owner's first Cloudflare Pages deploy (see `docs/DEPLOYMENT.md`).
 
 ---
 
@@ -167,6 +167,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; only Pig as passive mob (Cow / Chicken from CLAUDE.md §14 not added).
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Mobile: no touch controls (keyboard + mouse required; Try anyway only helps tablets with keyboards / trackpads); `index.html` uses `100vw / 100vh` (mobile URL-bar quirks); no real-device testing.
 * Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
 * Textures: ore art verified by atlas sheet + tests only (no cave-wall screenshot); ore cluster count can be below the target on some seeds (min 10 ore pixels enforced); stone cracks could read slightly like ore at a distance; atlas generation ~6.6 ms slower on the cold first call.
 * Graphics: fog-off through a real day/night change and the 60 FPS cap are unit-tested only (headless is paused / below 60 FPS); fog off shows chunk streaming edges; a capped first frame may wait one interval; the limiter's 2 ms jitter tolerance lets a display refresh just above the cap (e.g. 62 Hz vs cap 60) render every callback (~3 % over; Codex minor, kept for vsync jitter at common rates).
@@ -197,6 +198,12 @@ None.
 ---
 
 # Decisions
+
+## 2026-09-30
+
+### Monitoring: local only (user-approved)
+
+No error or performance data leaves the player's browser: errors are reported through the in-page error screen (copyable report) and performance through the F3 overlay. No analytics beacon, reporting endpoint or third-party service, so no consent / privacy handling is needed. Revisit only if the user asks.
 
 ## 2026-09-30
 
@@ -275,6 +282,15 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-09-30 — Phase 10 mobile compatibility investigation + graceful handling
+
+* Findings: on phones / tablets the game had no touch input, and on iOS (no Pointer Lock API) `requestPointerLock` threw a TypeError, leaving the game paused forever with no message. Emulation can't show real GPU / WebGPU performance, iOS Pointer Lock / IndexedDB behaviour, touch ergonomics, thermals or memory limits.
+* `src/platform/capabilities.ts` (pure): no Pointer Lock → `needs-keyboard-mouse`; fine pointer (`pointer` / `any-pointer`) → `playable`; coarse only → `needs-keyboard-mouse`; undetermined → `unknown` (treated as playable). `src/platform/pointerLock.ts`: `requestLockSafely` (requested / unsupported / failed, never throws) used by main.ts and `InputController`.
+* Title screen on a blocked device: Continue / New world disabled, notice "Blockora currently needs a keyboard and mouse. Touch controls are planned.", "Try anyway" (for tablets with keyboards). Without Pointer Lock the pause menu explains that the browser can't capture the mouse instead of looping. Title / pause / error screens fit 390 px wide with ≥ 44 px tap targets and scroll when short.
+* Verified: desktop unchanged; iPhone 13 / Pixel 7 / iPad emulation show the notice with no overflow or page errors; iPad with Pointer Lock removed → Try anyway → pause-menu message.
+* Codex review PASS_WITH_NOTES (first round). Its minor note fixed: a lock request that throws on a supporting browser now shows "The browser did not capture the mouse. Wait a moment and click Play again." immediately instead of waiting out the grace window (browser-verified).
+* Recommendation (not implemented): touch controls (left virtual stick, right-side look drag, tap break / long-press place or action buttons, jump / crouch / inventory buttons, tappable hotbar) feeding `InputController`; pause driven by an explicit playing flag instead of Pointer Lock; mobile defaults render distance 4, resolution 50–75 %, 30 fps cap; test on real iOS / Android; handle WebGL context loss.
 
 ## 2026-09-30 — Phase 10 production build + Cloudflare Pages config (local only)
 
@@ -647,11 +663,11 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (82 files, 1326 tests)
+pnpm test → PASS (83 files, 1342 tests)
 ```
 
 ---
 
 # Next Task
 
-Phase 10 remaining: error / performance monitoring (decide with the user: none, a self-hosted endpoint, or a service — nothing external without approval), mobile compatibility investigation (touch controls? pointer lock absent on mobile → at least a clear "desktop only" message), then the first real deploy by the owner and header verification.
+Owner: create the Cloudflare Pages project and run the first deploy (see `docs/DEPLOYMENT.md`), then verify headers with `curl -I`. After that: Phase 11 (optional multiplayer) only if the user wants it; otherwise candidates are touch controls, greedy meshing with real-GPU numbers, more mobs (cow / chicken), and the remaining Known Issues.

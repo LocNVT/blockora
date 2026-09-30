@@ -29,6 +29,8 @@ export interface MainMenuHandlers {
   /** Receives the raw text of the seed field (blank = use the suggested seed). */
   readonly onNewWorld: (seedText: string) => void;
   readonly onSettings: () => void;
+  /** "Try anyway" on a device without pointer lock / a fine pointer. */
+  readonly onTryAnyway: () => void;
   readonly onConfirmReplace: () => void;
   readonly onCancelReplace: () => void;
 }
@@ -46,7 +48,11 @@ export class MainMenu {
   private readonly continueButton: HTMLButtonElement;
   private readonly confirmSeed: HTMLDivElement;
   private readonly error: HTMLDivElement;
+  private readonly newWorldButton: HTMLButtonElement;
+  private readonly tryAnywayLink: HTMLButtonElement;
+  private readonly notice: HTMLDivElement;
   private continueAllowed: boolean;
+  private newWorldAllowed: boolean;
 
   constructor(
     parent: HTMLElement,
@@ -120,7 +126,14 @@ export class MainMenu {
     error.className = 'main-menu__error';
     error.setAttribute('role', 'alert');
 
-    panel.append(mainView, confirmView, notice, error);
+    const tryAnywayLink = document.createElement('button');
+    tryAnywayLink.type = 'button';
+    tryAnywayLink.className = 'main-menu__try-anyway';
+    tryAnywayLink.textContent = 'Try anyway';
+    tryAnywayLink.style.display = model.playBlocked ? 'inline-block' : 'none';
+    tryAnywayLink.addEventListener('click', handlers.onTryAnyway);
+
+    panel.append(mainView, confirmView, notice, tryAnywayLink, error);
     overlay.appendChild(panel);
     parent.appendChild(overlay);
 
@@ -131,6 +144,10 @@ export class MainMenu {
     this.confirmSeed = confirmSeed;
     this.error = error;
     this.continueAllowed = model.continueEnabled;
+    this.newWorldAllowed = model.newWorldEnabled;
+    this.newWorldButton = newWorldButton;
+    this.tryAnywayLink = tryAnywayLink;
+    this.notice = notice;
     this.buttons = [continueButton, newWorldButton, settingsButton, replaceButton, cancelButton];
   }
 
@@ -161,6 +178,7 @@ export class MainMenu {
   font-family: sans-serif;
   user-select: none;
   z-index: 25;
+  overflow-y: auto;
 }
 .main-menu__panel {
   display: flex;
@@ -169,6 +187,7 @@ export class MainMenu {
   gap: ${s.gapPx}px;
   padding: 28px 40px;
   max-width: calc(100vw - 32px);
+  box-sizing: border-box;
   background: ${s.panelBackground};
   border: 2px solid ${s.panelBorder};
   border-radius: 8px;
@@ -191,6 +210,7 @@ export class MainMenu {
   color: #fff;
   font-size: ${s.buttonFontPx}px;
   padding: 10px 0;
+  min-height: 44px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -236,6 +256,23 @@ export class MainMenu {
   font-size: 14px;
   text-align: center;
 }
+.main-menu__try-anyway {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  background: none;
+  border: 0;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+@media (max-width: 480px) {
+  .main-menu__panel { padding: 20px 16px; }
+  .main-menu__title { font-size: 36px; }
+  .main-menu__button, .main-menu__seed { width: min(${s.buttonWidthPx}px, calc(100vw - 64px)); }
+  .main-menu__info, .main-menu__notice, .main-menu__error { max-width: calc(100vw - 64px); }
+}
 .main-menu__error {
   min-height: 1.3em;
   max-width: ${s.buttonWidthPx + 40}px;
@@ -271,7 +308,18 @@ export class MainMenu {
     }
     if (!busy) {
       this.continueButton.disabled = !this.continueAllowed;
+      this.newWorldButton.disabled = !this.newWorldAllowed;
     }
+  }
+
+  /** Re-enables the buttons per the model after "Try anyway" and hides the link and notice. */
+  applyModel(model: MainMenuModel): void {
+    this.continueAllowed = model.continueEnabled;
+    this.newWorldAllowed = model.newWorldEnabled;
+    this.tryAnywayLink.style.display = model.playBlocked ? 'inline-block' : 'none';
+    this.notice.style.display = model.notice === null ? 'none' : 'block';
+    this.notice.textContent = model.notice ?? '';
+    this.setBusy(false);
   }
 
   show(): void {

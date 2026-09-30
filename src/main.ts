@@ -32,6 +32,13 @@ import { ErrorCoordinator, isBenignWindowMessage } from './errors/ErrorCoordinat
 import { guardFrame } from './errors/frameGuard';
 import { SettingsScreen } from './ui/SettingsScreen';
 import { MainMenu } from './ui/MainMenu';
+import {
+  POINTER_LOCK_FAILED_MESSAGE,
+  POINTER_LOCK_UNSUPPORTED_MESSAGE,
+  classifyPlatform,
+  readCapabilityInputs,
+} from './platform/capabilities';
+import { requestLockSafely } from './platform/pointerLock';
 import { LoadingScreen } from './ui/LoadingScreen';
 import { MenuFlow, type MenuFlowResult, type WorldStartParams } from './menu/MenuFlow';
 import {
@@ -243,6 +250,7 @@ function runTitleScreen(
       await store?.clear();
     },
     random: randomUint32,
+    platform: classifyPlatform(readCapabilityInputs({ document, matchMedia: (q) => window.matchMedia(q) })),
   });
   return new Promise((resolve) => {
     const settingsScreen = new SettingsScreen(container, settings, onSettingsChange, () => settingsScreen.hide());
@@ -263,6 +271,10 @@ function runTitleScreen(
       onContinue: () => handle(flow.continueWorld()),
       onNewWorld: (seedText) => handle(flow.newWorld(seedText)),
       onSettings: () => settingsScreen.show(),
+      onTryAnyway: () => {
+        flow.tryAnyway();
+        menu.applyModel(flow.model);
+      },
       onConfirmReplace: () => {
         menu.setError('');
         menu.setBusy(true);
@@ -581,11 +593,17 @@ async function bootstrap(): Promise<void> {
   const pauseController = new PauseController();
   /** Asks for pointer lock (from a user gesture) without flashing the pause menu while it is acquired. */
   function requestGameLock(): void {
-    pauseController.expectLock();
-    const request: unknown = renderer.domElement.requestPointerLock();
-    if (request instanceof Promise) {
-      request.catch(() => undefined); // refused (e.g. the user just pressed Esc): the pause menu stays up
+    // A refused request (e.g. the user just pressed Esc) leaves the pause menu up.
+    const result = requestLockSafely(renderer.domElement);
+    if (result === 'unsupported') {
+      pauseMenu.setStatus(POINTER_LOCK_UNSUPPORTED_MESSAGE, 'error');
+      return;
     }
+    if (result === 'failed') {
+      pauseMenu.setStatus(POINTER_LOCK_FAILED_MESSAGE, 'error');
+      return;
+    }
+    pauseController.expectLock();
   }
 
   function openInventoryScreen(mode: '2x2' | '3x3'): void {

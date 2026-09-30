@@ -112,6 +112,7 @@ export class PauseMenu {
   font-family: sans-serif;
   user-select: none;
   z-index: 30;
+  overflow-y: auto;
 }
 .pause-menu__panel {
   display: flex;
@@ -119,6 +120,8 @@ export class PauseMenu {
   align-items: center;
   gap: ${s.gapPx}px;
   padding: 28px 40px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
   background: ${s.panelBackground};
   border: 2px solid ${s.panelBorder};
   border-radius: 8px;
@@ -135,6 +138,7 @@ export class PauseMenu {
   color: #fff;
   font-size: ${s.buttonFontPx}px;
   padding: 10px 0;
+  min-height: 44px;
   border-radius: 6px;
   cursor: pointer;
 }
@@ -147,7 +151,7 @@ export class PauseMenu {
 }
 .pause-menu__status {
   min-height: 1.3em;
-  max-width: ${s.buttonWidthPx + 40}px;
+  max-width: min(${s.buttonWidthPx + 40}px, calc(100vw - 64px));
   color: #fff;
   font-size: 14px;
   text-align: center;

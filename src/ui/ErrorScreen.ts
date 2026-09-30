@@ -85,7 +85,7 @@ export function showFatalError(view: FatalView): void {
 
   const reload = styled(
     'button',
-    `font:inherit;font-size:16px;padding:10px 24px;border:0;border-radius:6px;cursor:pointer;` +
+    `font:inherit;font-size:16px;min-height:44px;padding:10px 24px;border:0;border-radius:6px;cursor:pointer;` +
       `background:${s.accent};color:#101820;font-weight:600;`,
     'Reload',
   );
@@ -105,7 +105,7 @@ export function showFatalError(view: FatalView): void {
   area.setAttribute('aria-label', 'Error report');
   const copy = styled(
     'button',
-    `font:inherit;font-size:14px;margin-top:8px;padding:6px 14px;border:1px solid #33424f;border-radius:6px;` +
+    `font:inherit;font-size:14px;margin-top:8px;min-height:44px;padding:6px 14px;border:1px solid #33424f;border-radius:6px;` +
       `cursor:pointer;background:transparent;color:${s.text};`,
     'Copy details',
   );

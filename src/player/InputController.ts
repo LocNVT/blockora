@@ -1,4 +1,5 @@
 import type { MovementInput } from './playerPhysics';
+import { requestLockSafely } from '../platform/pointerLock';
 
 /** Ctrl/Shift combos we can prevent-default for while pointer-locked (see note below). */
 const BLOCKABLE_MODIFIER_COMBOS = new Set(['KeyA', 'KeyS', 'KeyD']);
@@ -209,7 +210,7 @@ export class InputController {
   };
 
   private readonly onCanvasClick = (): void => {
-    this.canvas.requestPointerLock();
+    requestLockSafely(this.canvas);
   };
 
   constructor(
