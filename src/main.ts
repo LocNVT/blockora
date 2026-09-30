@@ -26,6 +26,16 @@ import { DebugOverlay } from './ui/DebugOverlay';
 import { FpsCounter } from './ui/FpsCounter';
 import { PauseMenu } from './ui/PauseMenu';
 import { SettingsScreen } from './ui/SettingsScreen';
+import { MainMenu } from './ui/MainMenu';
+import { LoadingScreen } from './ui/LoadingScreen';
+import { MenuFlow, type MenuFlowResult, type WorldStartParams } from './menu/MenuFlow';
+import {
+  LOADING_STAGES,
+  loadingProgress,
+  nextQuitStep,
+  storageStatusOf,
+  type LoadingStageId,
+} from './menu/menuModel';
 import { PauseController, simulationDt } from './gameplay/pause';
 import { applyLookSensitivity, clampSettings, type GameSettings } from './settings/GameSettings';
 import { loadSettings, saveSettings } from './settings/settingsStorage';
@@ -65,8 +75,8 @@ import { EatProgress } from './gameplay/eatProgress';
 import { blockUseAction } from './gameplay/blockUse';
 import { openChestContainer, type ChestContext } from './gameplay/chestActions';
 import { ChestStore } from './items/ChestStore';
-import { openSaveStore } from './save/IndexedDbSaveStore';
-import { applySave, createWorldSaver, loadSave, type GameSaveState } from './save/gameSave';
+import { openSaveStore, type IndexedDbSaveStore } from './save/IndexedDbSaveStore';
+import { applySave, createWorldSaver, loadSave, type GameSaveState, type LoadSaveResult } from './save/gameSave';
 import { SaveScheduler } from './save/SaveScheduler';
 import { playerAabb } from './player/voxelCollision';
 import { validateBlockTextures } from './world/texture/blockFaceTiles';
@@ -78,7 +88,6 @@ import {
   SAVE_CONFIG,
   SURVIVAL_CONFIG,
   CHUNK_STREAMING_CONFIG,
-  WORLD_GEN_CONFIG,
 } from './config/constants';
 import { Inventory } from './items/Inventory';
 import { itemRegistry, type ItemRegistry } from './items/ItemRegistry';
@@ -163,6 +172,85 @@ function applyPlace(
   return true;
 }
 
+/** Uniform unsigned 32-bit integer from the browser CSPRNG (new-world seeds). */
+function randomUint32(): number {
+  const buffer = new Uint32Array(1);
+  crypto.getRandomValues(buffer);
+  return buffer[0] ?? 0;
+}
+
+/** Resolves after the browser has had a chance to paint (bounded, so a hidden tab cannot stall startup). */
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(resolve, 250);
+    requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        window.clearTimeout(timer);
+        resolve();
+      }, 0);
+    });
+  });
+}
+
+/** Shows a loading stage and lets it paint before the (synchronous) work of that stage starts. */
+async function enterLoadingStage(loading: LoadingScreen, id: LoadingStageId): Promise<void> {
+  const stage = LOADING_STAGES.find((candidate) => candidate.id === id);
+  loading.setStage(stage?.label ?? '', loadingProgress(id));
+  await nextPaint();
+}
+
+/**
+ * Shows the title screen and resolves with the world the player chose. The
+ * saved world is only cleared after the explicit "Replace" confirmation.
+ */
+function runTitleScreen(
+  container: HTMLElement,
+  settings: GameSettings,
+  onSettingsChange: (next: GameSettings) => void,
+  store: IndexedDbSaveStore | null,
+  load: LoadSaveResult,
+): Promise<WorldStartParams> {
+  const saved = load.status === 'loaded' ? load.data.meta : null;
+  const flow = new MenuFlow({
+    status: storageStatusOf(store !== null, load),
+    savedSeed: saved?.seed ?? null,
+    clearSave: async () => {
+      await store?.clear();
+    },
+    random: randomUint32,
+  });
+  return new Promise((resolve) => {
+    const settingsScreen = new SettingsScreen(container, settings, onSettingsChange, () => settingsScreen.hide());
+    const handle = (result: MenuFlowResult): void => {
+      if (result.kind === 'start') {
+        menu.dispose();
+        settingsScreen.dispose();
+        resolve(result.params);
+      } else if (result.kind === 'error') {
+        menu.setError(result.message);
+        menu.setBusy(false);
+        menu.showMain();
+      } else if (flow.state === 'confirm-replace') {
+        menu.showConfirm(flow.pendingNewSeed);
+      }
+    };
+    const menu = new MainMenu(container, flow.model, flow.suggestedSeed, saved, {
+      onContinue: () => handle(flow.continueWorld()),
+      onNewWorld: (seedText) => handle(flow.newWorld(seedText)),
+      onSettings: () => settingsScreen.show(),
+      onConfirmReplace: () => {
+        menu.setError('');
+        menu.setBusy(true);
+        void flow.confirmReplace().then(handle);
+      },
+      onCancelReplace: () => {
+        flow.cancelReplace();
+        menu.showMain();
+      },
+    });
+  });
+}
+
 async function bootstrap(): Promise<void> {
   validateBlockTextures(blockRegistry, TILE_NAMES);
 
@@ -182,18 +270,35 @@ async function bootstrap(): Promise<void> {
   // Player preferences (localStorage, defaults when unavailable) drive the
   // camera FOV, look sensitivity and render distance; see applySettings below.
   let settings: GameSettings = loadSettings();
+
+  // Read the save (if any) for the title screen. The world is built once, after
+  // the player picks Continue or New world: the chosen seed drives generation
+  // and a continued save chunk edits must be in place before the first chunk
+  // is generated. A save that cannot be read blocks Continue; New world (after
+  // a confirm) clears it, so it is never overwritten silently.
+  const saveStore = await openSaveStore();
+  const storedLoad = await loadSave(saveStore);
+  const start = await runTitleScreen(
+    container,
+    settings,
+    (next) => {
+      settings = clampSettings(next);
+      saveSettings(settings);
+    },
+    saveStore,
+    storedLoad,
+  );
+  const loading = new LoadingScreen(container);
+  loading.show();
+  await enterLoadingStage(loading, 'terrain');
+
+  // A new world starts from an empty save (the store was cleared if needed).
+  const loadResult: LoadSaveResult = start.newWorld ? { status: 'empty' } : storedLoad;
+  const saved = loadResult.status === 'loaded' ? loadResult.data : null;
+  const seed = start.seed;
   applyFov(camera, settings.fov);
   applyRenderDistanceToView(scene, camera, settings.renderDistance);
   let mobDistances = mobDistancesFor(settings.renderDistance);
-
-  // Load the save (if any) before building world/player state: its seed
-  // drives generation and its chunk edits must be in place before the first
-  // chunk is generated. A save that can't be read starts a new world with
-  // saving disabled, so it is never overwritten.
-  const saveStore = await openSaveStore();
-  const loadResult = await loadSave(saveStore);
-  const saved = loadResult.status === 'loaded' ? loadResult.data : null;
-  const seed = saved?.meta.seed ?? WORLD_GEN_CONFIG.defaultSeed;
   const blockEdits = new BlockEditStore();
   if (saved !== null) {
     blockEdits.restore(saved.chunks);
@@ -487,11 +592,8 @@ async function bootstrap(): Promise<void> {
     },
   );
   const saveDisabledReason: string | null =
-    saveScheduler !== null
-      ? null
-      : loadResult.status === 'blocked'
-        ? 'Saving is disabled: the existing save could not be read.'
-        : 'Saving is unavailable: browser storage is blocked.';
+    saveScheduler !== null ? null : 'Saving is unavailable: browser storage is blocked.';
+  let quitWarned = false;
   const pauseMenu = new PauseMenu(container, {
     onResume: requestGameLock,
     onSettings: () => {
@@ -512,6 +614,27 @@ async function bootstrap(): Promise<void> {
         }
       });
     },
+    onQuit: () => {
+      const step = nextQuitStep(saveScheduler !== null, quitWarned);
+      if (step === 'warn') {
+        quitWarned = true;
+        pauseMenu.setStatus('Progress will not be saved. Click again to quit anyway.', 'error');
+      } else if (step === 'quit' || saveScheduler === null) {
+        location.reload();
+      } else {
+        pauseMenu.setSaveBusy(true);
+        pauseMenu.setStatus('Saving...', 'info');
+        void saveScheduler.flushAndWait().then((succeeded) => {
+          if (succeeded) {
+            pauseMenu.setStatus('Saved. Returning to title...', 'ok');
+            location.reload();
+          } else {
+            pauseMenu.setSaveBusy(false);
+            pauseMenu.setStatus('Saving failed, so the game was not closed. Try again.', 'error');
+          }
+        });
+      }
+    },
   });
   pauseMenu.setSaveAvailability(saveDisabledReason);
   let wasPaused = false;
@@ -521,11 +644,15 @@ async function bootstrap(): Promise<void> {
   // outline before the first frame, so the shader/pipeline stalls happen
   // during startup rather than in-game (e.g. on the first targeted block).
   // Only a warm-up: a failure must not stop the game from starting.
+  await enterLoadingStage(loading, 'shaders');
   try {
     await blockOutline.precompile(() => renderer.compileAsync(scene, camera));
   } catch (error) {
     console.warn('[renderer] material precompile failed; shaders will compile on first use.', error);
   }
+
+  await enterLoadingStage(loading, 'first-frame');
+  let loadingHidden = false;
 
   renderer.setAnimationLoop((timestamp) => {
     perfStats.markFrame();
@@ -635,6 +762,7 @@ async function bootstrap(): Promise<void> {
     // paused, which excludes the inventory and death screens by construction.
     if (paused && !wasPaused) {
       settingsOpen = false;
+      quitWarned = false;
       pauseMenu.setStatus(saveDisabledReason ?? '', saveDisabledReason === null ? 'info' : 'error');
     }
     wasPaused = paused;
@@ -832,6 +960,11 @@ async function bootstrap(): Promise<void> {
     fpsCounter.update(perfStats.now(), () => perfStats.snapshot().fps);
 
     renderer.render(scene, camera);
+    if (!loadingHidden) {
+      // First frame is on screen: the world is ready and the pause menu (Click to play) takes over.
+      loadingHidden = true;
+      loading.hide();
+    }
 
     // Read renderer.info *after* render(): its per-frame counters are reset by
     // the animation loop before this callback runs.

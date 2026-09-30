@@ -23,6 +23,7 @@ export interface PauseMenuHandlers {
   readonly onResume: () => void;
   readonly onSettings: () => void;
   readonly onSave: () => void;
+  readonly onQuit: () => void;
 }
 
 /**
@@ -37,6 +38,7 @@ export class PauseMenu {
   private readonly title: HTMLDivElement;
   private readonly resumeButton: HTMLButtonElement;
   private readonly saveButton: HTMLButtonElement;
+  private readonly quitButton: HTMLButtonElement;
   private readonly status: HTMLDivElement;
   private shown = false;
 
@@ -64,7 +66,9 @@ export class PauseMenu {
     settingsButton.textContent = 'Settings';
     const saveButton = PauseMenu.button('pause-menu__save', handlers.onSave);
     saveButton.textContent = 'Save';
-    panel.append(resumeButton, settingsButton, saveButton);
+    const quitButton = PauseMenu.button('pause-menu__quit', handlers.onQuit);
+    quitButton.textContent = 'Save & quit to title';
+    panel.append(resumeButton, settingsButton, saveButton, quitButton);
 
     const status = document.createElement('div');
     status.className = 'pause-menu__status';
@@ -77,6 +81,7 @@ export class PauseMenu {
     this.title = title;
     this.resumeButton = resumeButton;
     this.saveButton = saveButton;
+    this.quitButton = quitButton;
     this.status = status;
     this.setMode('paused');
   }
@@ -172,8 +177,10 @@ export class PauseMenu {
     }
   }
 
+  /** Disables Save and Quit while a save (or the save before quitting) is running. */
   setSaveBusy(busy: boolean): void {
     this.saveButton.disabled = busy;
+    this.quitButton.disabled = busy;
   }
 
   setStatus(text: string, kind: PauseStatusKind = 'info'): void {

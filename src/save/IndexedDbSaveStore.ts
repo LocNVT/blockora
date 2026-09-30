@@ -87,6 +87,19 @@ export class IndexedDbSaveStore implements SaveBackend {
     });
   }
 
+  /** Deletes every stored record (all stores) in one all-or-nothing transaction: the "replace world" step. */
+  clear(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction(ALL_STORES, 'readwrite');
+      for (const name of ALL_STORES) {
+        tx.objectStore(name).clear();
+      }
+      tx.oncomplete = (): void => resolve();
+      tx.onerror = (): void => reject(tx.error ?? new Error('IndexedDB clear failed.'));
+      tx.onabort = (): void => reject(tx.error ?? new Error('IndexedDB clear aborted.'));
+    });
+  }
+
   /**
    * Writes one snapshot in a single readwrite transaction (all-or-nothing).
    * Requests are issued synchronously so a save started in `pagehide` is

@@ -251,7 +251,7 @@ on a reasonable desktop.
 
 # Phase 9 — UX & Polish
 
-* [ ] Main menu
+* [x] Main menu
 * [x] Pause menu
 * [x] Settings
 * [x] FOV
@@ -260,7 +260,7 @@ on a reasonable desktop.
 * [ ] Audio settings
 * [ ] Graphics settings
 * [x] Debug screen
-* [ ] Loading screen
+* [x] Loading screen
 * [ ] Error handling
 * [ ] Better textures
 * [ ] Sound effects

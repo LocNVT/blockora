@@ -144,3 +144,47 @@ describe('fractalNoise3D', () => {
     }
   });
 });
+
+// Regression: `seed * 2147483647` exceeded 2^53 for large seeds (random 32-bit
+// world seeds), so the hash lost the seed's low bits. Compare against an exact
+// BigInt reference of the same construction.
+describe('lattice hash with large seeds', () => {
+  const M = 2n ** 32n;
+  const mod = (v: bigint): bigint => ((v % M) + M) % M;
+  function reference2D(seed: number, x: number, y: number): number {
+    let h = Number(mod(BigInt(x) * 374761393n + BigInt(y) * 668265263n + BigInt(seed) * 2147483647n));
+    h = (h ^ (h >>> 13)) & 0xffffffff;
+    h = Math.imul(h, 1274126177) & 0xffffffff;
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h / 4294967296;
+  }
+  function reference3D(seed: number, x: number, y: number, z: number): number {
+    let h = Number(
+      mod(BigInt(x) * 374761393n + BigInt(y) * 668265263n + BigInt(z) * 2246822519n + BigInt(seed) * 2147483647n),
+    );
+    h = (h ^ (h >>> 13)) & 0xffffffff;
+    h = Math.imul(h, 1274126177) & 0xffffffff;
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h / 4294967296;
+  }
+  const seeds = [1, 42, 999_999, 4_000_000, 123_456_789, 2_147_483_647, 3_000_000_000, 4_294_967_295];
+  const coords = [0, 1, -1, 17, -300, 12_345, -98_765];
+
+  it('matches the exact 2D reference for every seed size', () => {
+    for (const seed of seeds) {
+      for (const x of coords) {
+        for (const y of coords) {
+          expect(latticeHash2D(seed, x, y)).toBe(reference2D(seed, x, y));
+        }
+      }
+    }
+  });
+
+  it('matches the exact 3D reference at lattice points (valueNoise3D returns the corner hash)', () => {
+    for (const seed of seeds) {
+      for (const x of coords) {
+        expect(valueNoise3D(seed, x, 5, -x)).toBe(reference3D(seed, x, 5, -x));
+      }
+    }
+  });
+});

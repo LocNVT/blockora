@@ -5,7 +5,10 @@ const HASH_MASK = 0xffffffff;
  * rules): same (seed, x, y) always maps to the same [0, 1) value, on any machine.
  */
 function hash2D(seed: number, x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263 + seed * 2147483647) & HASH_MASK;
+  // Seed term via Math.imul: `seed * 2147483647` loses precision above ~2^22
+  // (product > 2^53). imul gives the same low 32 bits whenever the old product
+  // was exact, so existing worlds are unchanged.
+  let h = (x * 374761393 + y * 668265263 + Math.imul(seed, 2147483647)) & HASH_MASK;
   h = (h ^ (h >>> 13)) & HASH_MASK;
   h = Math.imul(h, 1274126177) & HASH_MASK;
   h = (h ^ (h >>> 16)) >>> 0;
@@ -25,7 +28,7 @@ export function latticeHash2D(seed: number, x: number, y: number): number {
 
 /** Deterministic integer hash over 3 axes; same construction as `hash2D` with a third mixed-in coordinate. */
 function hash3D(seed: number, x: number, y: number, z: number): number {
-  let h = (x * 374761393 + y * 668265263 + z * 2246822519 + seed * 2147483647) & HASH_MASK;
+  let h = (x * 374761393 + y * 668265263 + z * 2246822519 + Math.imul(seed, 2147483647)) & HASH_MASK;
   h = (h ^ (h >>> 13)) & HASH_MASK;
   h = Math.imul(h, 1274126177) & HASH_MASK;
   h = (h ^ (h >>> 16)) >>> 0;
