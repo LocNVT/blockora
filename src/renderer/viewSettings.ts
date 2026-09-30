@@ -26,3 +26,26 @@ export function applyRenderDistanceToView(
     fog.far = range.far;
   }
 }
+
+/**
+ * Turns distance fog on or off. Off removes it from the scene (`scene.fog =
+ * null`), so nothing else - notably the per-frame day/night colour update,
+ * which only touches an existing fog - creates or feeds it. On re-attaches the
+ * same `fog` instance with its range re-derived from the current render
+ * distance (it was not tracked while detached).
+ */
+export function setFogEnabled(
+  scene: Pick<THREE.Scene, 'fog'>,
+  fog: THREE.Fog,
+  enabled: boolean,
+  renderDistanceChunks: number,
+): void {
+  if (!enabled) {
+    scene.fog = null;
+    return;
+  }
+  const range = computeFogRange(renderDistanceChunks);
+  fog.near = range.near;
+  fog.far = range.far;
+  scene.fog = fog;
+}

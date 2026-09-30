@@ -16,6 +16,12 @@ export interface GameSettings {
   readonly effectsVolume: number;
   /** Ambient (wind) volume, percent 0..100. */
   readonly ambientVolume: number;
+  /** Internal render resolution, percent of the native (capped) pixel ratio. */
+  readonly resolutionScale: number;
+  /** Distance fog (off shows the streaming edge of the world). */
+  readonly fogEnabled: boolean;
+  /** Frame-rate cap in fps; 0 = unlimited (vsync). One of SETTINGS_CONFIG.frameRateCaps. */
+  readonly frameRateCap: number;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
@@ -26,6 +32,9 @@ export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: SETTINGS_CONFIG.defaultMasterVolume,
   effectsVolume: SETTINGS_CONFIG.defaultEffectsVolume,
   ambientVolume: SETTINGS_CONFIG.defaultAmbientVolume,
+  resolutionScale: SETTINGS_CONFIG.defaultResolutionScale,
+  fogEnabled: SETTINGS_CONFIG.defaultFogEnabled,
+  frameRateCap: SETTINGS_CONFIG.defaultFrameRateCap,
 };
 
 interface Range {
@@ -49,6 +58,11 @@ function volumeOr(value: unknown, fallback: number): number {
   return numberOr(value, fallback, SETTINGS_CONFIG.volume, true);
 }
 
+/** A frame cap must be one of the selectable options; anything else falls back (0 = unlimited is always valid). */
+function frameCapOr(value: unknown, fallback: number): number {
+  return typeof value === 'number' && SETTINGS_CONFIG.frameRateCaps.includes(value) ? value : fallback;
+}
+
 /** Clamps every field into its SETTINGS_CONFIG range (FOV, render distance and volumes are rounded to integers). */
 export function clampSettings(settings: GameSettings): GameSettings {
   return {
@@ -59,6 +73,14 @@ export function clampSettings(settings: GameSettings): GameSettings {
     masterVolume: volumeOr(settings.masterVolume, DEFAULT_SETTINGS.masterVolume),
     effectsVolume: volumeOr(settings.effectsVolume, DEFAULT_SETTINGS.effectsVolume),
     ambientVolume: volumeOr(settings.ambientVolume, DEFAULT_SETTINGS.ambientVolume),
+    resolutionScale: numberOr(
+      settings.resolutionScale,
+      DEFAULT_SETTINGS.resolutionScale,
+      SETTINGS_CONFIG.resolutionScale,
+      true,
+    ),
+    fogEnabled: settings.fogEnabled,
+    frameRateCap: frameCapOr(settings.frameRateCap, DEFAULT_SETTINGS.frameRateCap),
   };
 }
 
@@ -85,6 +107,14 @@ export function validateSettings(raw: unknown): GameSettings {
     masterVolume: volumeOr(data.masterVolume, DEFAULT_SETTINGS.masterVolume),
     effectsVolume: volumeOr(data.effectsVolume, DEFAULT_SETTINGS.effectsVolume),
     ambientVolume: volumeOr(data.ambientVolume, DEFAULT_SETTINGS.ambientVolume),
+    resolutionScale: numberOr(
+      data.resolutionScale,
+      DEFAULT_SETTINGS.resolutionScale,
+      SETTINGS_CONFIG.resolutionScale,
+      true,
+    ),
+    fogEnabled: typeof data.fogEnabled === 'boolean' ? data.fogEnabled : DEFAULT_SETTINGS.fogEnabled,
+    frameRateCap: frameCapOr(data.frameRateCap, DEFAULT_SETTINGS.frameRateCap),
   };
 }
 

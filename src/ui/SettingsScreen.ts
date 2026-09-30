@@ -19,7 +19,8 @@ type SliderKey =
   | 'renderDistance'
   | 'masterVolume'
   | 'effectsVolume'
-  | 'ambientVolume';
+  | 'ambientVolume'
+  | 'resolutionScale';
 
 /** Slider-backed numeric settings: key, label and how the live value is printed. */
 interface SliderSpec {
@@ -33,6 +34,10 @@ interface SliderSpec {
    * The label still updates while dragging.
    */
   readonly applyOnRelease?: boolean;
+}
+
+function formatFrameCap(cap: number): string {
+  return cap > 0 ? `${cap} FPS` : 'Unlimited (vsync)';
 }
 
 function formatPercent(value: number): string {
@@ -54,6 +59,13 @@ const SLIDERS: readonly SliderSpec[] = [
     format: (v) => `${v} chunks`,
     applyOnRelease: true,
   },
+  {
+    key: 'resolutionScale',
+    label: 'Resolution scale',
+    range: SETTINGS_CONFIG.resolutionScale,
+    format: formatPercent,
+    applyOnRelease: true,
+  },
   { key: 'masterVolume', label: 'Master volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
   { key: 'effectsVolume', label: 'Effects volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
   { key: 'ambientVolume', label: 'Ambient volume', range: SETTINGS_CONFIG.volume, format: formatPercent },
@@ -67,14 +79,16 @@ interface SliderRow {
 
 /**
  * Settings overlay opened from the pause menu: sliders for FOV, mouse
- * sensitivity, render distance and the three volumes (live value labels), an FPS-counter toggle
- * and a Back button. Every change is reported immediately through `onChange`;
+ * sensitivity, render distance, resolution scale and the three volumes (live
+ * value labels), FPS-counter and fog toggles, a frame-rate limit select and a Back button. Every change is reported immediately through `onChange`;
  * applying and persisting is the caller's job.
  */
 export class SettingsScreen {
   private readonly overlay: HTMLDivElement;
   private readonly rows: readonly SliderRow[];
   private readonly fpsCheckbox: HTMLInputElement;
+  private readonly fogCheckbox: HTMLInputElement;
+  private readonly frameCapSelect: HTMLSelectElement;
   private shown = false;
 
   constructor(
@@ -135,6 +149,33 @@ export class SettingsScreen {
     fpsRow.append(fpsCheckbox, fpsLabel);
     panel.appendChild(fpsRow);
 
+    const fogRow = document.createElement('label');
+    fogRow.className = 'settings-screen__row settings-screen__row--check';
+    const fogCheckbox = document.createElement('input');
+    fogCheckbox.type = 'checkbox';
+    fogCheckbox.className = 'settings-screen__fog';
+    fogCheckbox.addEventListener('change', () => this.emitChange());
+    const fogLabel = document.createElement('span');
+    fogLabel.textContent = 'Distance fog';
+    fogRow.append(fogCheckbox, fogLabel);
+    panel.appendChild(fogRow);
+
+    const capRow = document.createElement('label');
+    capRow.className = 'settings-screen__row settings-screen__row--select';
+    const capLabel = document.createElement('span');
+    capLabel.textContent = 'Frame rate limit';
+    const frameCapSelect = document.createElement('select');
+    frameCapSelect.className = 'settings-screen__framecap';
+    for (const cap of SETTINGS_CONFIG.frameRateCaps) {
+      const option = document.createElement('option');
+      option.value = String(cap);
+      option.textContent = formatFrameCap(cap);
+      frameCapSelect.appendChild(option);
+    }
+    frameCapSelect.addEventListener('change', () => this.emitChange());
+    capRow.append(capLabel, frameCapSelect);
+    panel.appendChild(capRow);
+
     const back = document.createElement('button');
     back.type = 'button';
     back.className = 'settings-screen__back';
@@ -147,6 +188,8 @@ export class SettingsScreen {
     this.overlay = overlay;
     this.rows = rows;
     this.fpsCheckbox = fpsCheckbox;
+    this.fogCheckbox = fogCheckbox;
+    this.frameCapSelect = frameCapSelect;
     this.setValues(initial);
   }
 
@@ -204,6 +247,22 @@ export class SettingsScreen {
   align-items: center;
   gap: 10px;
 }
+.settings-screen__row--select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-screen__framecap {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 15px;
+}
+.settings-screen__framecap option {
+  color: #000;
+}
 .settings-screen__value {
   font-variant-numeric: tabular-nums;
 }
@@ -234,6 +293,8 @@ export class SettingsScreen {
       value.textContent = spec.format(settings[spec.key]);
     }
     this.fpsCheckbox.checked = settings.showFpsCounter;
+    this.fogCheckbox.checked = settings.fogEnabled;
+    this.frameCapSelect.value = String(settings.frameRateCap);
   }
 
   private read(): GameSettings {
@@ -244,11 +305,17 @@ export class SettingsScreen {
       masterVolume: 0,
       effectsVolume: 0,
       ambientVolume: 0,
+      resolutionScale: 0,
     };
     for (const { spec, input } of this.rows) {
       numbers[spec.key] = Number(input.value);
     }
-    return { ...numbers, showFpsCounter: this.fpsCheckbox.checked };
+    return {
+      ...numbers,
+      showFpsCounter: this.fpsCheckbox.checked,
+      fogEnabled: this.fogCheckbox.checked,
+      frameRateCap: Number(this.frameCapSelect.value),
+    };
   }
 
   private emitChange(): void {

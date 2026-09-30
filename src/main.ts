@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { createRenderer } from './renderer/createRenderer';
 import { createScene } from './renderer/scene';
+import { FrameLimiter } from './renderer/frameLimiter';
+import { computePixelRatio } from './renderer/resolution';
 import { createCamera, resizeCamera } from './renderer/camera';
 import { ChunkMeshRenderer, setChunkDaylight } from './renderer/chunkMeshes';
 import { BlockOutline } from './renderer/BlockOutline';
@@ -42,7 +44,7 @@ import {
 import { PauseController, simulationDt } from './gameplay/pause';
 import { applyLookSensitivity, clampSettings, type GameSettings } from './settings/GameSettings';
 import { loadSettings, saveSettings } from './settings/settingsStorage';
-import { applyFov, applyRenderDistanceToView } from './renderer/viewSettings';
+import { applyFov, applyRenderDistanceToView, setFogEnabled } from './renderer/viewSettings';
 import { AudioSystem } from './audio/AudioSystem';
 import { volumesFromSettings } from './audio/volume';
 import { GameEventQueue, type GameEventSink } from './events/GameEvents';
@@ -312,6 +314,21 @@ async function bootstrap(): Promise<void> {
   // camera FOV, look sensitivity and render distance; see applySettings below.
   let settings: GameSettings = loadSettings();
 
+  // Graphics: internal resolution (pixel ratio) and fog; the frame-rate cap is read per frame.
+  function applyResolution(): void {
+    renderer.setPixelRatio(computePixelRatio(settings.resolutionScale, window.devicePixelRatio));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  function applyGraphicsSettings(previous: GameSettings | null, next: GameSettings): void {
+    if (previous === null || next.resolutionScale !== previous.resolutionScale) {
+      applyResolution();
+    }
+    if (previous === null || next.fogEnabled !== previous.fogEnabled) {
+      setFogEnabled(scene, sceneWithLights.fog, next.fogEnabled, next.renderDistance);
+    }
+  }
+  applyGraphicsSettings(null, settings);
+
   // Audio: the sound engine only starts on the first user gesture (browser
   // autoplay policy) and everything stays silent if Web Audio is unavailable.
   const audio = new AudioSystem(volumesFromSettings(settings));
@@ -348,7 +365,9 @@ async function bootstrap(): Promise<void> {
     container,
     settings,
     (next) => {
+      const previous = settings;
       settings = clampSettings(next);
+      applyGraphicsSettings(previous, settings);
       saveSettings(settings);
       audio.setVolumes(volumesFromSettings(settings));
     },
@@ -549,7 +568,7 @@ async function bootstrap(): Promise<void> {
 
   function onWindowResize(): void {
     resizeCamera(camera, window.innerWidth / window.innerHeight);
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    applyResolution();
   }
   window.addEventListener('resize', onWindowResize);
 
@@ -664,6 +683,7 @@ async function bootstrap(): Promise<void> {
       applyRenderDistanceToView(scene, camera, next.renderDistance);
       mobDistances = mobDistancesFor(next.renderDistance);
     }
+    applyGraphicsSettings(previous, next);
     fpsCounter.setVisible(next.showFpsCounter);
     audio.setVolumes(volumesFromSettings(next));
     saveSettings(next);
@@ -757,10 +777,18 @@ async function bootstrap(): Promise<void> {
     errors.fatal(error, 'frame');
   };
 
+  // The animation callback runs at the display rate. The frame-rate cap skips
+  // whole frames (nothing simulated or drawn); a rendered frame's dt is the
+  // real time since the previous rendered one, so the simulation stays correct.
+  const frameLimiter = new FrameLimiter();
   renderer.setAnimationLoop(guardFrame((timestamp) => {
-    perfStats.markFrame();
     timer.update(timestamp);
-    const frameDt = timer.getDelta();
+    const step = frameLimiter.step(timer.getDelta(), settings.frameRateCap);
+    if (!step.render) {
+      return;
+    }
+    perfStats.markFrame();
+    const frameDt = step.dt;
 
     // Paused (unlocked with no other screen owning the cursor) freezes the
     // simulation: every dt below is 0 and the player/mob/drop steps are skipped.
@@ -1128,6 +1156,12 @@ async function bootstrap(): Promise<void> {
       position: playerState.position,
       chunk: worldToChunkCoord(playerState.position.x, playerState.position.z),
       renderDistance: settings.renderDistance,
+      resolution: {
+        width: renderer.domElement.width,
+        height: renderer.domElement.height,
+        pixelRatio: renderer.getPixelRatio(),
+        scalePercent: settings.resolutionScale,
+      },
     }));
   }, onFrameFailure));
 }
