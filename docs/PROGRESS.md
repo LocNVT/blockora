@@ -225,6 +225,8 @@ First real-hardware numbers (owner, 2026-09-30, WebGPU, 1555×739 at ratio 1.0, 
 
 Stress check (owner, same machine, WebGPU, 1555×739, render distance 12, standing): 59.8 FPS (vsync-locked), frame ms avg 16.7 / p95 17.0 / max 20.5, 493 draw calls, 545 419 triangles, 729 chunks loaded / 625 meshed, JS heap 214 MB. 2.6× the triangles and 3.5× the draw calls with no frame-time change → the GPU is not the bottleneck on this hardware; greedy meshing / occlusion culling are not needed now. Revisit only if lower-end hardware or a mid-sprint F3 capture shows GPU-bound frames.
 
+Third capture (owner, 2026-10-01, WebGPU, 1875×919, render distance 12, ~360 blocks travelled, standing, chunk cache full 256 / 256, 25 % hit): 59.9 FPS, frame ms 16.7 / 16.9 / 17.5, 260 draw calls, 334 085 triangles, 729 loaded / 625 meshed, gen 4.51 / light 0.65 / mesh 2.14 ms, heap 228 MB. Rated A. Test procedure + reference table: `docs/PERFORMANCE.md`. Still missing: a mid-sprint capture (streaming) and a lower-end machine.
+
 ## 2026-09-29
 
 ### Voxel lighting (user-approved)
