@@ -6,7 +6,7 @@
 
 ## Current Task
 
-Item names (hover tooltip + hotbar label) — implemented and validated; awaiting Codex review. Next: fix the crafting-table → chest crash (Known Issues).
+None in progress — ready for the owner's playtest.
 
 ---
 
@@ -167,7 +167,6 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; models are simple (no chicken comb / tail, no cow udder / tail); a capped type's spawn attempt is skipped rather than re-rolled.
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
-* **Bug (found during the tooltip check, pre-existing since chests):** opening a crafting table, closing it, then opening a chest throws `CraftingGrid: index 4 out of range (0..3)` — chest mode skips the grid rebuild, so `InventoryScreen.render()` still reads the 3×3 grid slots against the chest session's 2×2 grid. Fix next.
 * Tooltips: hover only (no touch / long-press); the hotbar label can fire behind the open inventory if an item is moved into the selected slot.
 * Mobile: no touch controls (keyboard + mouse required; Try anyway only helps tablets with keyboards / trackpads); `index.html` uses `100vw / 100vh` (mobile URL-bar quirks); no real-device testing.
 * Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
@@ -290,6 +289,11 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-10-02 — Fix: crafting table → chest crash
+
+* Opening a crafting table, closing it, then opening a chest threw `CraftingGrid: index 4 out of range (0..3)` (pre-existing since chests): chest mode skips the grid rebuild, so `InventoryScreen.render()` read the 3×3 grid slot elements against the chest session's 2×2 grid. `open()` now records `chestMode`, and `render()` skips the (hidden) crafting grid and output slots while a chest is open.
+* Verified in real Chrome, each sequence twice: crafting table → chest (failed on the previous build, passes now), chest → crafting table (3×3 crafts 1 wood → 4 planks), 2×2 inventory → chest → 2×2; chest ↔ inventory moves and chest tooltips work; no page errors. No node regression test (InventoryScreen is DOM-only and has no test harness) — browser sequence script kept in the scratchpad. Codex review PASS_WITH_NOTES (first round; note: the DOM-only regression has no automated test).
 
 ## 2026-10-02 — Item names: hover tooltip + hotbar label (user request)
 

@@ -102,6 +102,12 @@ export class InventoryScreen {
 
   private gridSlots: SlotElements[] = [];
   private gridMode: '2x2' | '3x3' | null = null;
+  /**
+   * True while a chest is open. The crafting row is hidden and the chest
+   * session uses its own 2×2 grid, so the grid / result slot elements (which
+   * may still be the 3×3 set from an earlier crafting table) must not render.
+   */
+  private chestMode = false;
 
   private session: ContainerSession | null = null;
   private _isOpen = false;
@@ -479,6 +485,7 @@ export class InventoryScreen {
     this.hoveredSlot = null;
 
     const chestMode = mode === 'chest';
+    this.chestMode = chestMode;
     this.craftingRow.style.display = chestMode ? 'none' : 'flex';
     this.chestSection.style.display = chestMode ? 'block' : 'none';
     if (!chestMode && this.gridMode !== mode) {
@@ -516,8 +523,10 @@ export class InventoryScreen {
       return;
     }
 
-    for (const slot of this.gridSlots) {
-      this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
+    if (!this.chestMode) {
+      for (const slot of this.gridSlots) {
+        this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
+      }
     }
     for (const slot of this.chestSlots) {
       this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
@@ -528,7 +537,9 @@ export class InventoryScreen {
     for (const slot of this.hotbarSlots) {
       this.renderSlotIfChanged(slot, session.getSlot(slot.ref));
     }
-    this.renderSlotIfChanged(this.resultSlotEl, session.getSlot(this.resultSlotEl.ref));
+    if (!this.chestMode) {
+      this.renderSlotIfChanged(this.resultSlotEl, session.getSlot(this.resultSlotEl.ref));
+    }
 
     const cursor = session.getCursor();
     if (this.lastCursorRendered !== cursor) {
