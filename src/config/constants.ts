@@ -282,6 +282,17 @@ export const INVENTORY_CONFIG = {
   hotbarSlots: 9,
 } as const;
 
+/** In-game recipe book (inventory screen side panel) and its first-time hint. */
+export const RECIPE_BOOK_CONFIG = {
+  /** Versioned localStorage key remembering that the first-time hint was already shown (small per-browser flag, no world data). */
+  hintStorageKey: 'blockora.hint.recipeBook.v1',
+  /** Viewport width (px) at or below which the book replaces the inventory panel instead of sitting beside it. */
+  narrowMaxWidthPx: 600,
+  panelWidthPx: 380,
+  miniSlotPx: 30,
+  toggleButtonMinHeightPx: 44,
+} as const;
+
 /** Item name tooltip (inventory screen) and the selected-item name label above the hotbar. */
 export const ITEM_LABEL_CONFIG = {
   tooltip: {

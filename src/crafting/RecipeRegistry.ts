@@ -323,6 +323,11 @@ export class RecipeRegistry {
     }
   }
 
+  /** The registered recipe definitions, in registration order (read-only; used by the in-game recipe book). */
+  all(): readonly RecipeDefinition[] {
+    return this.normalized.map((entry) => entry.definition);
+  }
+
   /** Number of registered recipes. */
   get size(): number {
     return this.normalized.length;

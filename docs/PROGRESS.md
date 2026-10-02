@@ -167,6 +167,7 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; models are simple (no chicken comb / tail, no cow udder / tail); a capped type's spawn attempt is skipped rather than re-rolled.
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* Recipe book: ingredient names aren't pluralised ("2 × Stick"); only inventory contents count (items already in the grid or on the cursor don't); no click-to-fill; at 390 px the existing 460 px inventory panel is cropped on both sides (pre-existing; the book / button / hint avoid it).
 * Tooltips: hover only (no touch / long-press); the hotbar label can fire behind the open inventory if an item is moved into the selected slot.
 * Mobile: no touch controls (keyboard + mouse required; Try anyway only helps tablets with keyboards / trackpads); `index.html` uses `100vw / 100vh` (mobile URL-bar quirks); no real-device testing.
 * Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
@@ -289,6 +290,14 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-10-02 — In-game recipe book (user request: crafting instructions with text and images)
+
+* `src/crafting/recipeBook.ts` (pure, built from `RecipeRegistry.all()` — nothing hard-coded in the UI): per recipe the result + count + display name, grid needed (shaped: 3×3 if either side > 2; shapeless: 2×2 if ≤ 4 ingredients), a display grid from the pattern, an ingredient summary ("3 × Wooden Planks, 2 × Stick") and a generated instruction ("Crafting table: put 3 × Wooden Planks across the top row and 2 × Stick in the middle column, middle and bottom rows."); `canCraftNow` (inventory totals + grid available on this screen); craftable recipes first, each group in registry order.
+* `src/ui/RecipeBook.ts`: "Recipes (R)" button on the inventory (2×2) and crafting table (3×3) screens (hidden for chests); R toggles (modifiers ignored, so Ctrl+R still reloads); 380 px side panel, full-width replacement with its own Close at ≤ 600 px; each entry shows the icon pattern → result icon, name, grid tag, ingredients, instruction, status; craftable entries green, others dimmed with "Missing ingredients" / "Needs crafting table"; hovering icons shows the item tooltip; refreshed on render only. `RECIPE_BOOK_CONFIG`.
+* First-time hint (`src/ui/recipeHint.ts`): "New? Press R or click Recipes to see what you can craft." once per browser (small localStorage flag; once per session without storage), dismissed by ×, opening the book or closing the screen.
+* Click-to-fill the grid: skipped (needs new ContainerSession logic; avoided duplication / loss risk).
+* Verified in real Chrome at 1280×720 and 390×844: all 11 recipes listed with icons, craftable state updates when items move, 3×3 recipes turn green at a crafting table, tooltips, hint shown once, no page errors. Codex review PASS_WITH_NOTES (first round; note: RecipeBook uses the global `document` / `window` instead of the overlay's `ownerDocument` — irrelevant for the single-document game).
 
 ## 2026-10-02 — Fix: crafting table → chest crash
 
@@ -698,7 +707,7 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (88 files, 1405 tests)
+pnpm test → PASS (89 files, 1478 tests)
 ```
 
 ---

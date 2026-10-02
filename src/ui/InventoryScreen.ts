@@ -6,7 +6,11 @@ import { iconTileForItem, durabilityBarColor } from '../items/itemIcons';
 import type { ContainerSession, SlotRef } from '../items/ContainerSession';
 import { ItemIconCache } from './itemIconCache';
 import { describeItem, placeTooltip } from './itemTooltip';
-import { ITEM_LABEL_CONFIG } from '../config/constants';
+import { INVENTORY_CONFIG, ITEM_LABEL_CONFIG, RECIPE_BOOK_CONFIG } from '../config/constants';
+import { buildRecipeBook, countItems } from '../crafting/recipeBook';
+import { resolveBrowserStorage, type SettingsStorage } from '../settings/settingsStorage';
+import { RecipeBook } from './RecipeBook';
+import { createRecipeHintGate } from './recipeHint';
 
 /** '2x2' = player inventory crafting; '3x3' = crafting table; 'chest' = chest container above the inventory. */
 export type InventoryScreenMode = '2x2' | '3x3' | 'chest';
@@ -93,6 +97,9 @@ export class InventoryScreen {
   private readonly cursorCount: HTMLSpanElement;
   private readonly iconCache: ItemIconCache;
   private readonly tooltipEl: HTMLDivElement;
+  private readonly overlayToolbar: HTMLDivElement;
+  private readonly recipeBook: RecipeBook;
+  private readonly onDocumentKeyDown: (event: KeyboardEvent) => void;
 
   /** Slot under the mouse (null when none) and the last mouse position, for the tooltip. */
   private hoveredSlot: SlotElements | null = null;
@@ -120,6 +127,7 @@ export class InventoryScreen {
     private readonly itemRegistry: ItemRegistry,
     private readonly blockRegistry: BlockRegistry,
     iconCache: ItemIconCache = new ItemIconCache(),
+    hintStorage: SettingsStorage | null = resolveBrowserStorage(),
   ) {
     this.iconCache = iconCache;
     InventoryScreen.ensureStyleInjected(parent.ownerDocument ?? document);
@@ -131,6 +139,24 @@ export class InventoryScreen {
     const panel = document.createElement('div');
     panel.className = 'inventory-screen__panel';
     overlay.appendChild(panel);
+
+    // Recipes toggle + first-time hint, above the crafting row (hidden in chest mode).
+    const toolbar = document.createElement('div');
+    toolbar.className = 'inventory-screen__toolbar';
+    panel.appendChild(toolbar);
+    this.overlayToolbar = toolbar;
+    this.recipeBook = new RecipeBook(overlay, {
+      entries: buildRecipeBook(),
+      itemRegistry,
+      blockRegistry,
+      iconCache,
+      hintGate: createRecipeHintGate(hintStorage),
+      onOpenChange: (open) => {
+        overlay.classList.toggle('inventory-screen--book-open', open);
+        if (open) this.render(); // fill in craftable state straight away (button, R key, ...)
+      },
+    });
+    toolbar.append(this.recipeBook.hintElement, this.recipeBook.toggleButton);
 
     const craftingRow = document.createElement('div');
     craftingRow.className = 'inventory-screen__crafting-row';
@@ -217,6 +243,23 @@ export class InventoryScreen {
 
     parent.appendChild(overlay);
     this.overlay = overlay;
+
+    // R toggles the recipe book while a crafting screen is open (no modifiers, so Ctrl+R still reloads).
+    this.onDocumentKeyDown = (event: KeyboardEvent): void => {
+      if (
+        event.code !== 'KeyR' ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        !this._isOpen ||
+        this.chestMode
+      ) {
+        return;
+      }
+      this.recipeBook.toggle();
+    };
+    (parent.ownerDocument ?? document).addEventListener('keydown', this.onDocumentKeyDown);
   }
 
   private static ensureStyleInjected(doc: Document): void {
@@ -232,9 +275,28 @@ export class InventoryScreen {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   background: rgba(0, 0, 0, 0.45);
   user-select: none;
   z-index: 10;
+}
+.inventory-screen__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: ${SCREEN_STYLE.slotGapPx * 2}px;
+}
+@media (max-width: ${RECIPE_BOOK_CONFIG.narrowMaxWidthPx}px) {
+  /* The recipe book takes the whole screen on narrow viewports instead of sitting beside the inventory. */
+  .inventory-screen--book-open .inventory-screen__panel { display: none; }
+  /* The inventory panel is wider than a phone screen, so pin the Recipes button / hint to the viewport top instead. */
+  .inventory-screen__toolbar {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 1;
+  }
 }
 .inventory-screen__panel {
   background: ${SCREEN_STYLE.panelBackground};
@@ -487,6 +549,12 @@ export class InventoryScreen {
     const chestMode = mode === 'chest';
     this.chestMode = chestMode;
     this.craftingRow.style.display = chestMode ? 'none' : 'flex';
+    this.overlayToolbar.style.display = chestMode ? 'none' : 'flex';
+    if (chestMode) {
+      this.recipeBook.screenClosed();
+    } else {
+      this.recipeBook.screenOpened(mode);
+    }
     this.chestSection.style.display = chestMode ? 'block' : 'none';
     if (!chestMode && this.gridMode !== mode) {
       this.rebuildGrid(mode);
@@ -509,6 +577,7 @@ export class InventoryScreen {
     }
     this.session?.close(dropLeftover);
     this.session = null;
+    this.recipeBook.screenClosed();
     this.overlay.style.display = 'none';
     this.cursorEl.style.display = 'none';
     this.hoveredSlot = null;
@@ -548,6 +617,12 @@ export class InventoryScreen {
     }
 
     this.refreshTooltip();
+
+    if (this.recipeBook.isOpen && !this.chestMode) {
+      this.recipeBook.refresh(
+        countItems((index) => session.getSlot({ area: 'inventory', index }), INVENTORY_CONFIG.inventorySlots),
+      );
+    }
   }
 
   private renderSlotIfChanged(slot: SlotElements, stack: ItemStack | null): void {
@@ -622,6 +697,8 @@ export class InventoryScreen {
   }
 
   dispose(): void {
+    (this.overlay.ownerDocument ?? document).removeEventListener('keydown', this.onDocumentKeyDown);
+    this.recipeBook.dispose();
     this.overlay.remove();
   }
 }
