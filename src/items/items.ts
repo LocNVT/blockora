@@ -61,6 +61,8 @@ export interface FoodProperties {
 export interface ItemDefinition {
   readonly id: ItemId;
   readonly name: string;
+  /** Human-readable Title Case name shown in tooltips and the hotbar label. Unique per item. */
+  readonly displayName: string;
   readonly maxStackSize: number;
   readonly placesBlock?: BlockId;
   /** Atlas tile key for this item's hotbar/inventory icon (non-block items only need this). */
@@ -75,114 +77,133 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.Grass,
     name: 'grass',
+    displayName: 'Grass Block',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Grass,
   },
   {
     id: ItemId.Dirt,
     name: 'dirt',
+    displayName: 'Dirt',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Dirt,
   },
   {
     id: ItemId.Stone,
     name: 'stone',
+    displayName: 'Stone',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Stone,
   },
   {
     id: ItemId.Sand,
     name: 'sand',
+    displayName: 'Sand',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Sand,
   },
   {
     id: ItemId.Gravel,
     name: 'gravel',
+    displayName: 'Gravel',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Gravel,
   },
   {
     id: ItemId.Wood,
     name: 'wood',
+    displayName: 'Wood Log',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Wood,
   },
   {
     id: ItemId.Leaves,
     name: 'leaves',
+    displayName: 'Leaves',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Leaves,
   },
   {
     id: ItemId.CoalOre,
     name: 'coal_ore',
+    displayName: 'Coal Ore',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.CoalOre,
   },
   {
     id: ItemId.IronOre,
     name: 'iron_ore',
+    displayName: 'Iron Ore',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.IronOre,
   },
   {
     id: ItemId.GoldOre,
     name: 'gold_ore',
+    displayName: 'Gold Ore',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.GoldOre,
   },
   {
     id: ItemId.Glass,
     name: 'glass',
+    displayName: 'Glass',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Glass,
   },
   {
     id: ItemId.Planks,
     name: 'planks',
+    displayName: 'Wooden Planks',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Planks,
   },
   {
     id: ItemId.Cobblestone,
     name: 'cobblestone',
+    displayName: 'Cobblestone',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Cobblestone,
   },
   {
     id: ItemId.Torch,
     name: 'torch',
+    displayName: 'Torch',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Torch,
   },
   {
     id: ItemId.CraftingTable,
     name: 'crafting_table',
+    displayName: 'Crafting Table',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.CraftingTable,
   },
   {
     id: ItemId.Chest,
     name: 'chest',
+    displayName: 'Chest',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     placesBlock: BlockIdValues.Chest,
   },
   {
     id: ItemId.Stick,
     name: 'stick',
+    displayName: 'Stick',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'stick',
   },
   {
     id: ItemId.Coal,
     name: 'coal',
+    displayName: 'Coal',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'coal',
   },
   {
     id: ItemId.WoodenPickaxe,
     name: 'wooden_pickaxe',
+    displayName: 'Wooden Pickaxe',
     maxStackSize: 1,
     icon: 'wooden_pickaxe',
     tool: {
@@ -195,6 +216,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.WoodenAxe,
     name: 'wooden_axe',
+    displayName: 'Wooden Axe',
     maxStackSize: 1,
     icon: 'wooden_axe',
     tool: {
@@ -207,6 +229,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.WoodenShovel,
     name: 'wooden_shovel',
+    displayName: 'Wooden Shovel',
     maxStackSize: 1,
     icon: 'wooden_shovel',
     tool: {
@@ -219,6 +242,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.StonePickaxe,
     name: 'stone_pickaxe',
+    displayName: 'Stone Pickaxe',
     maxStackSize: 1,
     icon: 'stone_pickaxe',
     tool: {
@@ -231,6 +255,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.StoneAxe,
     name: 'stone_axe',
+    displayName: 'Stone Axe',
     maxStackSize: 1,
     icon: 'stone_axe',
     tool: {
@@ -243,6 +268,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.StoneShovel,
     name: 'stone_shovel',
+    displayName: 'Stone Shovel',
     maxStackSize: 1,
     icon: 'stone_shovel',
     tool: {
@@ -255,6 +281,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.Apple,
     name: 'apple',
+    displayName: 'Apple',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'apple',
     food: { hunger: 4 },
@@ -262,6 +289,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.RawPork,
     name: 'raw_pork',
+    displayName: 'Raw Pork',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'raw_pork',
     food: { hunger: 3 },
@@ -269,6 +297,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.RawBeef,
     name: 'raw_beef',
+    displayName: 'Raw Beef',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'raw_beef',
     food: { hunger: 4 },
@@ -276,6 +305,7 @@ export const ITEM_DEFINITIONS: readonly ItemDefinition[] = [
   {
     id: ItemId.RawChicken,
     name: 'raw_chicken',
+    displayName: 'Raw Chicken',
     maxStackSize: INVENTORY_CONFIG.maxStackSize,
     icon: 'raw_chicken',
     food: { hunger: 2 },

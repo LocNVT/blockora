@@ -282,6 +282,26 @@ export const INVENTORY_CONFIG = {
   hotbarSlots: 9,
 } as const;
 
+/** Item name tooltip (inventory screen) and the selected-item name label above the hotbar. */
+export const ITEM_LABEL_CONFIG = {
+  tooltip: {
+    /** Gap between the mouse cursor and the tooltip box. */
+    cursorOffsetPx: 14,
+    /** Minimum distance kept between the tooltip and the viewport edges. */
+    viewportMarginPx: 6,
+    /** z-index inside the inventory overlay (above slots / held stack). */
+    zIndex: 20,
+  },
+  hotbarLabel: {
+    /** How long the label stays fully visible after it is triggered. */
+    visibleMs: 1500,
+    /** Opacity fade-out duration once the visible time elapses. */
+    fadeMs: 400,
+    /** Distance from the viewport bottom (sits above the health/hunger rows). */
+    bottomOffsetPx: 108,
+  },
+} as const;
+
 export const CHEST_CONFIG = {
   /** Slots per chest container. */
   slots: 27,

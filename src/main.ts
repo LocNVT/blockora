@@ -1148,7 +1148,7 @@ async function bootstrap(): Promise<void> {
     );
 
     blockOutline.update(hit);
-    hotbarHud.update(inventory);
+    hotbarHud.update(inventory, !paused && !playerHealth.isDead);
 
     saveScheduler?.update(dt);
     fpsCounter.update(perfStats.now(), () => perfStats.snapshot().fps);

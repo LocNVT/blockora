@@ -1,17 +1,12 @@
 # Codex Review
 
-Status: PASS
+_Written by Claude from Codex's verbatim output (scripts/codex-review.ps1; Codex sandbox was read-only). Validation: 1405 tests, lint and build pass._
 
-Task:
-fix: raise jumpVelocity so the player can clear a 1-unit step
+Status: PASS_WITH_NOTES
 
-Summary:
-jumpVelocity=5 with gravity=18 gave an apex of v^2/(2g) ≈ 0.69 blocks, physically
-unable to clear a 1-unit step. Raising jumpVelocity to 6.5 gives an apex of
-≈1.17 blocks, enough to clear the step with margin. The chosen value exactly
-matches MOB_CONFIG.stepJumpVelocity (6.5), which already carries the comment
-"tuned to clear 1 block with margin but not 2" — the fix aligns player jump
-physics with the existing, independently-tuned mob auto-step constant.
+Task: Item names: inventory tooltips and hotbar label
+
+Summary: The change adds display names, inventory tooltips with tool and food details, and a timed label for the selected hotbar item. No concrete critical or important correctness, regression, or TypeScript issue found in the reviewed diff.
 
 Critical:
 - None
@@ -20,43 +15,26 @@ Important:
 - None
 
 Minor:
-- None
+- Hovering the crafting result may rebuild tooltip DOM on every render: `resultPreview()` can create a fresh stack each time, while the tooltip caches by object reference. Consider tracking the result’s displayed values if this becomes a measured performance issue.
 
 Required fixes:
 - None
 
 Tests:
-- The new test ("jump apex clears a 1-unit step") simulates a real jump from
-  rest via stepPlayer for 200 physics steps (1/60 dt), tracks the actual
-  simulated peak position, and asserts apex height > 1 block. This is a
-  genuine regression test: it fails under the old jumpVelocity=5 (apex ≈0.69)
-  and passes under 6.5 (apex ≈1.17) — not tautological, since it exercises the
-  full gravity/integration loop rather than checking the constant directly.
-  Existing test "jumps only when grounded" (line 112) compares against the
-  live PLAYER_CONFIG.jumpVelocity rather than a hardcoded number, so it
-  remains valid unchanged. Full suite: 1360/1360 tests pass (85 files),
-  including voxelCollision, fallDamage, and mobPhysics.
+- New unit tests cover names, tooltip descriptions and placement, and hotbar label state. Tests were not run during this review.
 
 Architecture:
-- No structural changes; single tuning constant plus one additive test.
-  Constant stays centralized in PLAYER_CONFIG per BlockDefinition/config
-  conventions; no magic numbers introduced.
+- The change keeps tooltip placement and hotbar label decisions in small UI helpers. It does not add gameplay or persistence coupling.
 
 Performance:
-- Negligible. Jump delta per physics step at 6.5 blocks/s over a 1/60s frame
-  is ~0.108 blocks, far under maxSubstepDistance (0.5), so no additional
-  collision substeps or tunneling risk. maxFallSpeed (40) and gravity (18)
-  are unaffected since jumpVelocity only sets the initial upward velocity,
-  not any clamp bound.
+- Tooltip placement and hotbar label updates are bounded. The crafting-result DOM churn is a minor observation.
 
 Reviewed files:
-- src/config/constants.ts
-- tests/playerPhysics.test.ts
-- src/player/playerPhysics.ts
-- src/player/voxelCollision.ts
-- src/player/fallDamage.ts
-- src/entities/mobPhysics.ts (MOB_CONFIG.stepJumpVelocity cross-reference)
-- docs/ROADMAP.md, docs/PROGRESS.md (no conflicting assumptions found)
+- `CLAUDE.md`, `docs/ROADMAP.md`, `docs/PROGRESS.md`
+- `src/config/constants.ts`, `src/items/items.ts`, `src/main.ts`
+- `src/ui/HotbarHud.ts`, `src/ui/InventoryScreen.ts`
+- `src/ui/hotbarLabel.ts`, `src/ui/itemTooltip.ts`
+- `tests/itemTooltip.test.ts`
 
 Recommendation:
-continue
+- Continue.

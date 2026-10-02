@@ -5,6 +5,8 @@ import type { BlockRegistry } from '../world/BlockRegistry';
 import { iconTileForItem, durabilityBarColor } from '../items/itemIcons';
 import type { ContainerSession, SlotRef } from '../items/ContainerSession';
 import { ItemIconCache } from './itemIconCache';
+import { describeItem, placeTooltip } from './itemTooltip';
+import { ITEM_LABEL_CONFIG } from '../config/constants';
 
 /** '2x2' = player inventory crafting; '3x3' = crafting table; 'chest' = chest container above the inventory. */
 export type InventoryScreenMode = '2x2' | '3x3' | 'chest';
@@ -90,6 +92,13 @@ export class InventoryScreen {
   private readonly cursorIcon: HTMLDivElement;
   private readonly cursorCount: HTMLSpanElement;
   private readonly iconCache: ItemIconCache;
+  private readonly tooltipEl: HTMLDivElement;
+
+  /** Slot under the mouse (null when none) and the last mouse position, for the tooltip. */
+  private hoveredSlot: SlotElements | null = null;
+  private mouseX = 0;
+  private mouseY = 0;
+  private tooltipStack: ItemStack | null | undefined = undefined;
 
   private gridSlots: SlotElements[] = [];
   private gridMode: '2x2' | '3x3' | null = null;
@@ -191,6 +200,11 @@ export class InventoryScreen {
     this.cursorEl = cursorEl;
     this.cursorIcon = cursorIcon;
     this.cursorCount = cursorCount;
+
+    const tooltipEl = document.createElement('div');
+    tooltipEl.className = 'inventory-screen__tooltip';
+    overlay.appendChild(tooltipEl);
+    this.tooltipEl = tooltipEl;
 
     overlay.addEventListener('contextmenu', (event) => event.preventDefault());
     overlay.addEventListener('mousemove', (event) => this.onMouseMove(event));
@@ -306,6 +320,32 @@ export class InventoryScreen {
   transform: translate(-50%, -50%);
   display: none;
 }
+.inventory-screen__tooltip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  display: none;
+  z-index: ${ITEM_LABEL_CONFIG.tooltip.zIndex};
+  max-width: calc(100vw - ${ITEM_LABEL_CONFIG.tooltip.viewportMarginPx * 2}px);
+  font-family: sans-serif;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: rgba(10, 10, 14, 0.95);
+  border: 1px solid ${SCREEN_STYLE.slotBorder};
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.inventory-screen__tooltip-name {
+  font-weight: bold;
+}
+.inventory-screen__tooltip-line {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+}
 .inventory-screen__cursor-icon {
   position: absolute;
   inset: 0;
@@ -334,6 +374,54 @@ export class InventoryScreen {
   private onMouseMove(event: MouseEvent): void {
     this.cursorEl.style.left = `${event.clientX}px`;
     this.cursorEl.style.top = `${event.clientY}px`;
+    this.mouseX = event.clientX;
+    this.mouseY = event.clientY;
+    if (this.tooltipEl.style.display !== 'none') {
+      this.positionTooltip();
+    }
+  }
+
+  /**
+   * Shows the tooltip for the hovered slot, or hides it when nothing is hovered,
+   * the slot is empty, or the cursor is carrying a stack (the held stack follows
+   * the mouse, so a tooltip next to it would only clutter). Rebuilds the text only
+   * when the hovered stack reference changed.
+   */
+  private refreshTooltip(): void {
+    const session = this.session;
+    const slot = this.hoveredSlot;
+    const stack = session !== null && slot !== null ? session.getSlot(slot.ref) : null;
+    if (stack === null || session === null || session.getCursor() !== null) {
+      this.tooltipStack = undefined;
+      this.tooltipEl.style.display = 'none';
+      return;
+    }
+    if (stack !== this.tooltipStack) {
+      this.tooltipStack = stack;
+      this.tooltipEl.replaceChildren();
+      describeItem(stack, this.itemRegistry).forEach((text, i) => {
+        const line = document.createElement('div');
+        line.className = i === 0 ? 'inventory-screen__tooltip-name' : 'inventory-screen__tooltip-line';
+        line.textContent = text;
+        this.tooltipEl.appendChild(line);
+      });
+    }
+    this.tooltipEl.style.display = 'block';
+    this.positionTooltip();
+  }
+
+  private positionTooltip(): void {
+    const el = this.tooltipEl;
+    const { left, top } = placeTooltip(
+      this.mouseX,
+      this.mouseY,
+      el.offsetWidth,
+      el.offsetHeight,
+      window.innerWidth,
+      window.innerHeight,
+    );
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
   }
 
   private rebuildGrid(mode: '2x2' | '3x3'): void {
@@ -356,6 +444,18 @@ export class InventoryScreen {
   }
 
   private attachSlotHandler(slot: SlotElements): void {
+    slot.root.onmouseenter = (event: MouseEvent) => {
+      this.hoveredSlot = slot;
+      this.mouseX = event.clientX;
+      this.mouseY = event.clientY;
+      this.refreshTooltip();
+    };
+    slot.root.onmouseleave = () => {
+      if (this.hoveredSlot === slot) {
+        this.hoveredSlot = null;
+        this.refreshTooltip();
+      }
+    };
     slot.root.onmousedown = (event: MouseEvent) => {
       event.preventDefault();
       const session = this.session;
@@ -376,6 +476,7 @@ export class InventoryScreen {
   /** Opens the screen in `mode` with the given session; rebuilds the grid only if the mode changed. */
   open(mode: InventoryScreenMode, session: ContainerSession): void {
     this.session = session;
+    this.hoveredSlot = null;
 
     const chestMode = mode === 'chest';
     this.craftingRow.style.display = chestMode ? 'none' : 'flex';
@@ -403,6 +504,8 @@ export class InventoryScreen {
     this.session = null;
     this.overlay.style.display = 'none';
     this.cursorEl.style.display = 'none';
+    this.hoveredSlot = null;
+    this.refreshTooltip();
     this._isOpen = false;
   }
 
@@ -432,6 +535,8 @@ export class InventoryScreen {
       this.renderCursor(cursor);
       this.lastCursorRendered = cursor;
     }
+
+    this.refreshTooltip();
   }
 
   private renderSlotIfChanged(slot: SlotElements, stack: ItemStack | null): void {

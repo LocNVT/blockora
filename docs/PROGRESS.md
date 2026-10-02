@@ -6,7 +6,7 @@
 
 ## Current Task
 
-None in progress. Uncommitted in the working tree (owner's, not part of the cow / chicken commit): `PLAYER_CONFIG.jumpVelocity` 5 → 6.5, its regression test in `tests/playerPhysics.test.ts`, and its review in `docs/CODEX_REVIEW.md`.
+Item names (hover tooltip + hotbar label) — implemented and validated; awaiting Codex review. Next: fix the crafting-table → chest crash (Known Issues).
 
 ---
 
@@ -167,6 +167,8 @@ Phase 2 exit criteria met: world is deterministic (seed + chunk coord) and strea
 * Combat: tool damage is a flat per-type bonus (no tier scaling); attacking wears a held tool by 1 like a block break; raw pork can be eaten raw (no cooking yet); PIG_CONFIG drop `itemId` is numeric (26) to avoid an import cycle (pinned by a test).
 * Mobs: no pathfinding — chasers steer straight at the player and stop at ledges / water / walls > 1 block (common on rough terrain); no player knockback (player velocity is input-driven); daylight despawn is a per-second chance, no burning visuals; cave spawns are sparse (random scan); shambler has no drops; models are simple (no chicken comb / tail, no cow udder / tail); a capped type's spawn attempt is skipped rather than re-rolled.
 * Chests: `chestKey` throws for |x| or |z| ≥ 1,048,576 (Codex minor); no shift-click; RMB on a chest always opens it (can't place against it).
+* **Bug (found during the tooltip check, pre-existing since chests):** opening a crafting table, closing it, then opening a chest throws `CraftingGrid: index 4 out of range (0..3)` — chest mode skips the grid rebuild, so `InventoryScreen.render()` still reads the 3×3 grid slots against the chest session's 2×2 grid. Fix next.
+* Tooltips: hover only (no touch / long-press); the hotbar label can fire behind the open inventory if an item is moved into the selected slot.
 * Mobile: no touch controls (keyboard + mouse required; Try anyway only helps tablets with keyboards / trackpads); `index.html` uses `100vw / 100vh` (mobile URL-bar quirks); no real-device testing.
 * Deployment: `_headers` only applies on Cloudflare Pages (not `vite dev` / `preview`); the `/*` and `/assets/*` rule merge is untested on Cloudflare itself; CSP needs `style-src 'unsafe-inline'`; nothing deployed yet (owner's step, see `docs/DEPLOYMENT.md`).
 * Textures: ore art verified by atlas sheet + tests only (no cave-wall screenshot); ore cluster count can be below the target on some seeds (min 10 ore pixels enforced); stone cracks could read slightly like ore at a distance; atlas generation ~6.6 ms slower on the cold first call.
@@ -288,6 +290,13 @@ Single-player voxel engine should be stable before introducing networking comple
 ---
 
 # Latest Completed Work
+
+## 2026-10-02 — Item names: hover tooltip + hotbar label (user request)
+
+* Every `ItemDefinition` has a required Title Case `displayName` ("Grass Block", "Wood Log", "Wooden Planks", "Coal Ore", "Raw Beef", …; internal `name` unchanged; test: non-empty, unique).
+* `src/ui/itemTooltip.ts` (pure): `describeItem` → name, "Durability n / max" for tools, "Restores n hunger" for food; `placeTooltip` → below-right of the cursor, flips left / up at viewport edges, clamped (works at 390 px wide). InventoryScreen shows it on hover in every mode (inventory, 2×2, 3×3, chest, crafting output); hidden for empty slots, while the cursor holds a stack, on mouse leave and on close; refreshed only on render (no per-frame work).
+* `src/ui/hotbarLabel.ts` (pure trigger) + HotbarHud: selected item's name above the hotbar for 1.5 s, then a 0.4 s fade, when the selected slot or its item changes; hidden while paused / dead. `ITEM_LABEL_CONFIG`.
+* Verified in real Chrome: label "Wooden Pickaxe" at 0.3 s, gone at 2.5 s; tooltips for block / tool / food / ore, crafting output, 3×3, chest; edge flip at 480×330; 390 px wide; no page errors. Codex review PASS_WITH_NOTES (first round; note: the crafting-output tooltip may rebuild its DOM per render because the preview stack is recreated — negligible, renders happen only on clicks / open).
 
 ## 2026-09-30 — Cow + chicken (CLAUDE.md §14 passive mobs complete)
 
@@ -685,7 +694,7 @@ pnpm dev   → PASS
 # Latest Tests
 
 ```text
-pnpm test → PASS (87 files, 1386 tests)
+pnpm test → PASS (88 files, 1405 tests)
 ```
 
 ---

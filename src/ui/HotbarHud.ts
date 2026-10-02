@@ -5,6 +5,8 @@ import type { ItemRegistry } from '../items/ItemRegistry';
 import type { BlockRegistry } from '../world/BlockRegistry';
 import { iconTileForItem, durabilityBarColor } from '../items/itemIcons';
 import { ItemIconCache } from './itemIconCache';
+import { nextHotbarLabel, type HotbarLabelState } from './hotbarLabel';
+import { ITEM_LABEL_CONFIG } from '../config/constants';
 
 /** Layout/visual constants for the hotbar HUD (kept local instead of scattered magic numbers). */
 const HOTBAR_STYLE = {
@@ -49,6 +51,9 @@ export class HotbarHud {
   private readonly durabilityFillElements: HTMLDivElement[] = [];
   private readonly lastRendered: RenderedSlotState[] = [];
   private readonly iconCache: ItemIconCache;
+  private readonly nameLabel: HTMLDivElement;
+  private labelState: HotbarLabelState | null = null;
+  private labelFadeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     parent: HTMLElement,
@@ -63,6 +68,11 @@ export class HotbarHud {
     container.className = 'hotbar-hud';
     parent.appendChild(container);
     this.container = container;
+
+    const nameLabel = document.createElement('div');
+    nameLabel.className = 'hotbar-hud__name';
+    parent.appendChild(nameLabel);
+    this.nameLabel = nameLabel;
   }
 
   private static ensureStyleInjected(doc: Document): void {
@@ -81,6 +91,26 @@ export class HotbarHud {
   gap: ${HOTBAR_STYLE.slotGapPx}px;
   pointer-events: none;
   user-select: none;
+}
+.hotbar-hud__name {
+  position: fixed;
+  left: 50%;
+  bottom: ${ITEM_LABEL_CONFIG.hotbarLabel.bottomOffsetPx}px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 3px 10px;
+  border-radius: ${HOTBAR_STYLE.borderRadiusPx}px;
+  background: ${HOTBAR_STYLE.backgroundColor};
+  color: ${HOTBAR_STYLE.countColor};
+  font-family: sans-serif;
+  font-size: 14px;
+  font-weight: bold;
+  text-align: center;
+  text-shadow: 0 0 2px #000;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
 }
 .hotbar-hud__slot {
   position: relative;
@@ -170,7 +200,7 @@ export class HotbarHud {
    * compared against the last rendered stack (by reference) and selected
    * flag, and only slots that changed touch the DOM.
    */
-  update(inventory: Inventory): void {
+  update(inventory: Inventory, labelEnabled = true): void {
     const hotbarSize = inventory.hotbarSize;
     while (this.slotElements.length < hotbarSize) {
       this.buildSlot(this.slotElements.length);
@@ -212,6 +242,52 @@ export class HotbarHud {
       }
 
       this.lastRendered[i] = { stack, selected };
+    }
+
+    this.updateNameLabel(inventory, labelEnabled);
+  }
+
+  /**
+   * Shows the selected item's display name when the selected slot or its item
+   * changes (see `nextHotbarLabel`), then fades it out. While `enabled` is false
+   * (pause menu / death screen) the label is hidden but the change is still
+   * recorded, so it does not pop up when play resumes.
+   */
+  private updateNameLabel(inventory: Inventory, enabled: boolean): void {
+    const stack = inventory.selectedStack();
+    const result = nextHotbarLabel(this.labelState, inventory.selectedHotbarIndex, stack);
+    this.labelState = result.state;
+    if (!enabled) {
+      this.hideLabel();
+    } else if (result.show && stack !== null) {
+      this.showLabel(this.itemRegistry.get(stack.itemId).displayName);
+    }
+  }
+
+  private showLabel(text: string): void {
+    this.clearFadeTimer();
+    const label = this.nameLabel;
+    label.textContent = text;
+    label.style.transition = 'none';
+    label.style.opacity = '1';
+    const { visibleMs, fadeMs } = ITEM_LABEL_CONFIG.hotbarLabel;
+    this.labelFadeTimer = setTimeout(() => {
+      this.labelFadeTimer = null;
+      label.style.transition = `opacity ${fadeMs}ms ease-out`;
+      label.style.opacity = '0';
+    }, visibleMs);
+  }
+
+  private hideLabel(): void {
+    this.clearFadeTimer();
+    this.nameLabel.style.transition = 'none';
+    this.nameLabel.style.opacity = '0';
+  }
+
+  private clearFadeTimer(): void {
+    if (this.labelFadeTimer !== null) {
+      clearTimeout(this.labelFadeTimer);
+      this.labelFadeTimer = null;
     }
   }
 
@@ -259,6 +335,8 @@ export class HotbarHud {
   }
 
   dispose(): void {
+    this.clearFadeTimer();
+    this.nameLabel.remove();
     this.container.remove();
   }
 }
